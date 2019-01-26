@@ -45,14 +45,13 @@ module Control.Monad.Terminal
   , MouseButton (..)
     -- *** Window Events
   , WindowEvent (..)
+    -- *** Signal Events
+  , SignalEvent (..) 
     -- *** Device Events
   , DeviceEvent (..)
   -- * Low-Level
   -- ** Terminal
   , Terminal (..)
-  -- ** Decoding
-  , Decoder (..)
-  , ansiDecoder
   ) where
 
 import           Control.Monad.Terminal.Decoder

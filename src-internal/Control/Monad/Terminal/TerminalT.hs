@@ -28,62 +28,33 @@ import qualified Control.Monad.Terminal.Monad    as T
 import qualified Control.Monad.Terminal.Printer  as T
 import qualified Control.Monad.Terminal.Terminal as T
 
-newtype TerminalT m a
-  = TerminalT (ReaderT T.Terminal m a)
+newtype TerminalT t m a
+  = TerminalT (ReaderT t m a)
   deriving (Functor, Applicative, Monad, MonadIO, MonadThrow, MonadCatch, MonadMask)
 
-runTerminalT :: (MonadIO m, MonadMask m) => TerminalT m a -> T.Terminal -> m a
-runTerminalT (TerminalT action) ansi = do
-  eventsChan <- liftIO newTChanIO
-  decoderVar <- liftIO $ newTVarIO $ T.ansiDecoder $ T.termSpecialChars ansi
-  runReaderT action ansi { T.termInput = nextEvent eventsChan decoderVar }
-  where
-    -- This function transforms the incoming raw event stream and sends
-    -- parts of it (all plain characters) through the ANSI decoder.
-    -- It does this in a transactional way whereas it is important that
-    -- each input event creates _at least one_ immediate output event.
-    -- This means: When feeding input characters to the decoder it
-    -- is necessary to emit one intermediate event after each character that
-    -- has been fed into the decoder. Otherwise the transaction
-    -- will fail and the actual modification to the decoder won't happen.
-    nextEvent eventsChan decoderVar = do
-      processRawEvent `orElse` pure () -- Even without a new raw event there might be events pending.
-      readTChan eventsChan
-      where
-        processRawEvent = T.termInput ansi >>= \case
-            T.KeyEvent (T.CharKey c) mods -> do
-              -- NB: This event is essential as it guarantees the whole transaction
-              -- to succeed by having at least one event in the `events` channel.
-              -- This information is also quite nice for debbuging.
-              writeTChan eventsChan (T.OtherEvent $ "ANSI decoder: Feeding character " ++ show c ++ ", modifiers " ++ show mods ++ ".")
-              -- Feed the decoder, save its new state and write its output to the
-              -- events chan (if any).
-              decoder <- readTVar decoderVar
-              let (ansiEvents, decoder') = T.feedDecoder decoder mods c
-              writeTVar decoderVar decoder'
-              forM_ ansiEvents (writeTChan eventsChan)
-            event -> writeTChan eventsChan event
+runTerminalT :: (MonadIO m, MonadMask m, T.Terminal t) => TerminalT t m a -> t -> m a
+runTerminalT (TerminalT action) t = runReaderT action t
 
-instance MonadTrans TerminalT where
+instance MonadTrans (TerminalT t) where
   lift = TerminalT . lift
 
-instance (MonadIO m) => T.MonadInput (TerminalT m) where
+instance (MonadIO m, T.Terminal t) => T.MonadInput (TerminalT t m) where
   waitMapInterruptAndEvents f = TerminalT $ do
     ansi <- ask
-    liftIO $ atomically $ f (T.termInterrupt ansi) (T.termInput ansi)
+    liftIO $ atomically $ f (T.termSignal ansi >> pure ()) (T.termEvent ansi)
 
-instance (MonadIO m, MonadThrow m) => T.MonadPrinter (TerminalT m) where
+instance (MonadIO m, MonadThrow m, T.Terminal t) => T.MonadPrinter (TerminalT t m) where
   putChar c = TerminalT $ do
     ansi <- ask
     when (safeChar c) $
-      liftIO $ atomically $ T.termOutput ansi $! Text.singleton c
+      liftIO $ atomically $ T.termCommand ansi $! Text.singleton c
   putString cs = TerminalT $ do
     ansi <- ask
     liftIO $ forM_ (filter safeChar cs) $ \c->
-      atomically $ T.termOutput ansi $! Text.singleton c
+      atomically $ T.termCommand ansi $! Text.singleton c
   putText t = TerminalT $ do
     ansi <- ask
-    liftIO $ loop (atomically . T.termOutput ansi) (Text.filter safeChar t)
+    liftIO $ loop (atomically . T.termCommand ansi) (Text.filter safeChar t)
     where
       loop out t0
         | Text.null t0 = pure ()
@@ -94,8 +65,8 @@ instance (MonadIO m, MonadThrow m) => T.MonadPrinter (TerminalT m) where
     liftIO  $ atomically $ T.termFlush ansi
   getLineWidth = snd <$> T.getScreenSize
 
-instance (MonadIO m, MonadThrow m) => T.MonadPrettyPrinter (TerminalT m) where
-  data Annotation (TerminalT m)
+instance (MonadIO m, MonadThrow m, T.Terminal t) => T.MonadPrettyPrinter (TerminalT t m) where
+  data Annotation (TerminalT t m)
     = Bold
     | Italic
     | Underlined
@@ -190,17 +161,17 @@ instance (MonadIO m, MonadThrow m) => T.MonadPrettyPrinter (TerminalT m) where
   resetAnnotation (Background _) = write "\ESC[49m"
   resetAnnotations               = write "\ESC[m"
 
-instance (MonadIO m, MonadThrow m) => T.MonadFormatPrinter (TerminalT m) where
+instance (MonadIO m, MonadThrow m, T.Terminal t) => T.MonadFormatPrinter (TerminalT t m) where
   bold       = Bold
   italic     = Italic
   underlined = Underlined
 
-instance (MonadIO m, MonadThrow m) => T.MonadColorPrinter (TerminalT m) where
+instance (MonadIO m, MonadThrow m, T.Terminal t) => T.MonadColorPrinter (TerminalT t m) where
   inverted   = Inverted
   foreground = Foreground
   background = Background
 
-instance (MonadIO m, MonadThrow m) => T.MonadTerminal (TerminalT m) where
+instance (MonadIO m, MonadThrow m, T.Terminal t) => T.MonadTerminal (TerminalT t m) where
   moveCursorUp i                         = write $ "\ESC[" <> Text.pack (show i) <> "A"
   moveCursorDown i                       = write $ "\ESC[" <> Text.pack (show i) <> "B"
   moveCursorLeft i                       = write $ "\ESC[" <> Text.pack (show i) <> "D"
@@ -214,7 +185,7 @@ instance (MonadIO m, MonadThrow m) => T.MonadTerminal (TerminalT m) where
       -- arrives or an Interrupt event occurs.
       -- An interrupt event will cause an `E.UserInterrupt` exception to be thrown.
       waitForCursorPositionReport = T.waitEvent >>= \case
-        T.InterruptEvent                           -> throwM E.UserInterrupt
+        T.SignalEvent T.InterruptSignal            -> throwM E.UserInterrupt
         T.DeviceEvent (T.CursorPositionReport pos) -> pure pos
         _ -> waitForCursorPositionReport
   setCursorPosition (x,y)                = write $ "\ESC[" <> Text.pack (show $ x + 1) <> ";" <> Text.pack (show $ y + 1) <> "H"
@@ -249,7 +220,7 @@ safeChar c
   | c  < '\xa0' = False -- C1 up to start of Latin-1.
   | otherwise   = True
 
-write :: (MonadIO m) => Text.Text -> TerminalT m ()
+write :: (MonadIO m, T.Terminal t) => Text.Text -> TerminalT t m ()
 write t = TerminalT $ do
   ansi <- ask
-  liftIO $ atomically $ T.termOutput ansi t
+  liftIO $ atomically $ T.termCommand ansi t

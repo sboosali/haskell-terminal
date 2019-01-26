@@ -23,5 +23,5 @@ main = withTerminal $ runTerminalT $ fix $ \loop-> do
     WindowEvent {} -> putDocLn $ annotate (foreground $ bright Magenta) (pretty $ show ev)
     _ ->              putDocLn $ pretty $ show ev
   flush
-  when (ev == InterruptEvent) (E.throwM UserInterrupt)
+  when (ev == SignalEvent InterruptSignal) (E.throwM UserInterrupt)
   loop

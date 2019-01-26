@@ -1,3 +1,4 @@
+{-# LANGUAGE RankNTypes #-}
 module System.Terminal
   ( Terminal (..)
   , withTerminal
@@ -10,5 +11,5 @@ import           Control.Monad.Terminal
 import qualified System.Terminal.Platform as Platform
 
 -- | (Indirection just for upcoming documentation).
-withTerminal :: (MonadIO m, MonadMask m) => (Terminal -> m a) -> m a
+withTerminal :: (MonadIO m, MonadMask m) => (forall t. Terminal t => t -> m a) -> m a
 withTerminal  = Platform.withTerminal

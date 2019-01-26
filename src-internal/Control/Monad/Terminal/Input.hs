@@ -5,6 +5,7 @@ module Control.Monad.Terminal.Input where
 import           Control.Monad.IO.Class
 import           Control.Monad.STM
 import           Data.Bits
+import qualified Data.ByteString as BS
 import           Data.List
 
 -- | This monad describes an environment that maintains a stream of `Event`s
@@ -77,9 +78,9 @@ waitInterruptOrElse stma = waitMapInterruptAndEvents $ \intr evs->
   where
     dropTillInterruptEvent :: STM Event -> STM ()
     dropTillInterruptEvent evs = ((Just <$> evs) `orElse` pure Nothing) >>= \case
-      Nothing             -> pure ()
-      Just InterruptEvent -> pure ()
-      _                   -> dropTillInterruptEvent evs
+      Nothing                            -> pure ()
+      Just (SignalEvent InterruptSignal) -> pure ()
+      _                                  -> dropTillInterruptEvent evs
 
 data Key
   = CharKey Char
@@ -132,7 +133,7 @@ data Event
   | MouseEvent MouseEvent
   | WindowEvent WindowEvent
   | DeviceEvent DeviceEvent
-  | InterruptEvent
+  | SignalEvent SignalEvent
   | OtherEvent String
   deriving (Eq,Ord,Show)
 
@@ -166,4 +167,9 @@ data WindowEvent
 data DeviceEvent
   = DeviceAttributesReport String
   | CursorPositionReport (Int,Int)
+  deriving (Eq, Ord, Show)
+
+data SignalEvent
+  = InterruptSignal
+  | OtherSignal BS.ByteString
   deriving (Eq, Ord, Show)
