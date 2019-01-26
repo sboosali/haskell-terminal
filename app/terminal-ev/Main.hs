@@ -7,7 +7,6 @@ import           Control.Monad.IO.Class
 import           Data.Char
 import           Data.Function             (fix)
 
-import           Control.Monad.Terminal
 import           Data.Text.Prettyprint.Doc
 import           System.Terminal
 

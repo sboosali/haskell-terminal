@@ -1,4 +1,4 @@
-.PHONY: install test terminal-ev terminal-app
+.PHONY: install test clean doc terminal-ev terminal-out terminal-printer
 
 install:
 	stack install
@@ -6,11 +6,20 @@ install:
 test:
 	stack test --ta "-t 3 -j1" --coverage
 
+clean:
+	stack clean
+
 doc:
 	stack haddock
 
 terminal-ev: install
 	~/.local/bin/terminal-ev
 
-termina-demo: install
+terminal-out: install
 	~/.local/bin/terminal-out
+
+terminal-printer: install
+	~/.local/bin/terminal-printer
+
+terminal-screen: install
+	~/.local/bin/terminal-screen

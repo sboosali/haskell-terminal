@@ -10,7 +10,7 @@ import           Control.Concurrent.STM.TChan
 import           Control.Concurrent.STM.TVar
 import           Control.Concurrent.STM.TMVar
 import qualified Control.Exception             as E
-import           Control.Monad                 (forever, forM_, when, unless, void)
+import           Control.Monad                 (forM_, void)
 import           Control.Monad.Catch hiding    (handle)
 import           Control.Monad.IO.Class
 import           Control.Monad.STM
@@ -18,7 +18,6 @@ import           Data.Bits
 import qualified Data.ByteString               as BS
 import qualified Data.ByteString.Char8         as BS8
 import           Data.Maybe
-import qualified Data.Text                     as Text
 import qualified Data.Text.IO                  as Text
 import           Foreign.C.Types
 import           Foreign.Marshal.Alloc
@@ -28,11 +27,11 @@ import           System.Environment
 import qualified System.IO                     as IO
 import qualified GHC.Conc                      as Conc
 import qualified Data.Dynamic                  as Dyn
-import           System.Posix.Types            (Fd(..))
 
-import           Control.Monad.Terminal.Terminal
-import           Control.Monad.Terminal.Input
-import           Control.Monad.Terminal.Decoder
+import           System.Terminal.Terminal
+import           System.Terminal.MonadInput
+import           System.Terminal.Decoder
+import           System.Terminal.Encoder
 
 #include "Rts.h"
 #include "hs_terminal.h"
@@ -41,18 +40,16 @@ data LocalTerminal
   = LocalTerminal
   { localType         :: BS.ByteString
   , localEvent        :: STM Event
-  , localSignal       :: STM SignalEvent
-  , localCommand      :: Text.Text -> STM ()
-  , localFlush        :: STM ()
-  , localScreenSize   :: STM (Int, Int)
+  , localSignal       :: STM Signal
+  , localScreenSize   :: STM (Rows, Columns)
   }
 
 instance Terminal LocalTerminal where
   termType         = localType
   termEvent        = localEvent
   termSignal       = localSignal
-  termCommand      = localCommand
-  termFlush        = localFlush
+  termCommand _ c  = Text.hPutStr IO.stdout (ansiEncode c)
+  termFlush _      = IO.hFlush IO.stdout
   termScreenSize   = localScreenSize
 
 withTerminal :: (MonadIO m, MonadMask m) => (forall t. Terminal t => t -> m a) -> m a
@@ -60,47 +57,41 @@ withTerminal action = do
   term        <- BS8.pack . fromMaybe "xterm" <$> liftIO (lookupEnv "TERM")
   mainThread  <- liftIO myThreadId
   signal      <- liftIO newEmptyTMVarIO
-  output      <- liftIO newEmptyTMVarIO
-  outputFlush <- liftIO newEmptyTMVarIO
   events      <- liftIO newTChanIO
   screenSize  <- liftIO (newTVarIO =<< getWindowSize)
   withTermiosSettings $ \termios->
     withResizeHandler (handleResize screenSize events) $
     withInputProcessing mainThread termios signal events $ 
-    withOutputProcessing output outputFlush $ action $ LocalTerminal {
+    action $ LocalTerminal {
         localType           = term
       , localEvent          = readTChan events
       , localSignal         = takeTMVar signal
-      , localCommand        = putTMVar output
-      , localFlush          = putTMVar outputFlush ()
       , localScreenSize     = readTVar screenSize
       }
   where
     handleResize screenSize events = do
       ws <- getWindowSize
-      atomically $ do
+      atomically do
         writeTVar screenSize ws
         writeTChan events (WindowEvent $ WindowSizeChanged ws)
 
 specialChar :: Termios -> Modifiers -> Char -> Maybe Event
 specialChar t mods = \case
-    c |                c == termiosVINTR  t -> Just $ SignalEvent InterruptSignal
-      | c == '\n'                           -> Just $ KeyEvent EnterKey     mods
-      | c == '\t'                           -> Just $ KeyEvent TabKey       mods
-      | c == '\b'   && c == termiosVERASE t -> Just $ KeyEvent BackspaceKey mods
-      | c == '\b'                           -> Just $ KeyEvent DeleteKey    mods
-      | c == '\DEL' && c == termiosVERASE t -> Just $ KeyEvent DeleteKey    mods
-      | c == '\DEL'                         -> Just $ KeyEvent BackspaceKey mods
-      | otherwise                           -> Nothing
+    c | c == termiosVINTR  t -> Just $ SignalEvent InterruptSignal
+      | c == termiosVERASE t -> Just $ KeyEvent BackspaceKey mods
+      | c == '\n'            -> Just $ KeyEvent EnterKey     mods
+      | c == '\t'            -> Just $ KeyEvent TabKey       mods
+      | c == '\b'            -> Just $ KeyEvent DeleteKey    mods
+      | c == '\DEL'          -> Just $ KeyEvent DeleteKey    mods
+      | otherwise            -> Nothing
 
 withTermiosSettings :: (MonadIO m, MonadMask m) => (Termios -> m a) -> m a
 withTermiosSettings fma = bracket before after between
   where
-    before  = liftIO $ do
+    before  = liftIO do
       termios <- getTermios
       let termios' = termios { termiosISIG = False, termiosICANON = False, termiosECHO = False }
       setTermios termios'
-      print termios
       pure termios
     after   = liftIO . setTermios
     between = fma
@@ -108,25 +99,17 @@ withTermiosSettings fma = bracket before after between
 withResizeHandler :: (MonadIO m, MonadMask m) => IO () -> m a -> m a
 withResizeHandler handler = bracket installHandler restoreHandler . const
   where
-    installHandler = liftIO $ do
+    installHandler = liftIO do
       Conc.ensureIOManagerIsRunning
       oldHandler <- Conc.setHandler (#const SIGWINCH) (Just (const handler, Dyn.toDyn handler))
       oldAction  <- stg_sig_install (#const SIGWINCH) (#const STG_SIG_HAN) nullPtr
       pure (oldHandler,oldAction)
-    restoreHandler (oldHandler,oldAction) = liftIO $ do
+    restoreHandler (oldHandler,oldAction) = liftIO do
       void $ Conc.setHandler (#const SIGWINCH) oldHandler
       void $ stg_sig_install (#const SIGWINCH) oldAction nullPtr
       pure ()
 
-withOutputProcessing :: (MonadIO m, MonadMask m) => TMVar Text.Text -> TMVar () -> m a -> m a
-withOutputProcessing output outputFlush =
-  bracket (liftIO $ A.async run) (liftIO . A.cancel) . const
-  where
-    run = forever $ atomically ((Just <$> takeTMVar output) `orElse` (takeTMVar outputFlush >> pure Nothing)) >>= \case
-        Nothing -> IO.hFlush IO.stdout
-        Just t  -> Text.hPutStr IO.stdout t
-
-withInputProcessing :: (MonadIO m, MonadMask m) => ThreadId -> Termios -> TMVar SignalEvent -> TChan Event -> m a -> m a
+withInputProcessing :: (MonadIO m, MonadMask m) => ThreadId -> Termios -> TMVar Signal -> TChan Event -> m a -> m a
 withInputProcessing mainThread termios signal events =
     bracket (liftIO $ A.async $ run decoder) (liftIO . A.cancel) . const
     where
@@ -159,9 +142,9 @@ withInputProcessing mainThread termios signal events =
         decoder = ansiDecoder (specialChar termios)
 
         writeEvent :: Event -> IO ()
-        writeEvent ev = do
-            when (ev == SignalEvent InterruptSignal) handleInterrupt
-            atomically (writeTChan events ev)
+        writeEvent = \case
+            SignalEvent InterruptSignal -> handleInterrupt
+            ev -> atomically (writeTChan events ev)
 
         -- This function is responsible for passing interrupt signals and
         -- eventually throwing an exception to the main thread in case it
@@ -170,8 +153,9 @@ withInputProcessing mainThread termios signal events =
         -- occurs - if the flag is still set when a new interrupt occurs, it assumes
         -- the main thread is not responsive.
         handleInterrupt  :: IO ()
-        handleInterrupt =  do
+        handleInterrupt = do
             unhandledSignal <- liftIO $ atomically do
+                writeTChan events (SignalEvent InterruptSignal)
                 (putTMVar signal InterruptSignal >> pure Nothing) <|> (Just <$> swapTMVar signal InterruptSignal)
             case unhandledSignal of
                 Just InterruptSignal -> E.throwTo mainThread E.UserInterrupt

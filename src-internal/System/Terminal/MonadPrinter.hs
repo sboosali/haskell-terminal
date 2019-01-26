@@ -1,5 +1,5 @@
 {-# LANGUAGE TypeFamilies #-}
-module Control.Monad.Terminal.Printer where
+module System.Terminal.MonadPrinter where
 
 import           Data.Text
 import           Data.Text.Prettyprint.Doc
@@ -83,7 +83,7 @@ class MonadPrinter m => MonadPrettyPrinter m where
   --   Instead, subclasses like `MonadFormatPrinter` and `MonadColorPrinter`
   --   offer abstract value constructors like `bold`, `underlined`, `inverted`
   --   which are then given meaning by the concrete class instance. The
-  --   environment `Control.Monad.Terminal.Ansi.AnsiTerminalT` for example
+  --   environment `System.Terminal.Ansi.AnsiTerminalT` for example
   --   implements all of these classes.
   data Annotation m
   -- | Print an annotated `Doc`.
@@ -95,7 +95,7 @@ class MonadPrinter m => MonadPrettyPrinter m where
   --
   -- @
   -- {-# LANGUAGE OverloadedStrings #-}
-  -- import Control.Monad.Terminal
+  -- import System.Terminal
   -- import Data.Text.Prettyprint.Doc
   --
   -- printer :: (`MonadFormatPrinter` m, `MonadColorPrinter` m) => m ()
@@ -165,6 +165,14 @@ class MonadPrettyPrinter m => MonadColorPrinter m where
   foreground      :: Color -> Annotation m
   -- | This annotation sets the __background__ color.
   background      :: Color -> Annotation m
+
+data SimpleAnnotation
+  = Bold
+  | Italic
+  | Underlined
+  | Inverted
+  | Foreground Color
+  | Background Color deriving (Eq, Ord, Show)
 
 data Color = Color ColorMode BasicColor
   deriving (Eq, Ord, Show)

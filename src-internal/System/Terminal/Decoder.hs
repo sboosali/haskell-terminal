@@ -1,9 +1,9 @@
-module Control.Monad.Terminal.Decoder where
+module System.Terminal.Decoder where
 
 import           Data.Char
 import           Data.Monoid                  ((<>))
 
-import           Control.Monad.Terminal.Input
+import           System.Terminal.MonadInput
 
 -- | The type `Decoder` represents a finite state transducer.
 --
