@@ -3,6 +3,7 @@
 module Main where
 
 import           Control.Concurrent
+import           Control.Monad.Catch
 import           Control.Monad
 import           Control.Monad.IO.Class
 
@@ -14,7 +15,7 @@ import           Prelude                   hiding ((<>))
 main :: IO ()
 main = withTerminal $ runTerminalT app
 
-app :: (MonadTerminal m) => m ()
+app :: (MonadTerminal m, MonadMask m) => m ()
 app = do
     putTextLn "Regular screen buffer..."
     flush

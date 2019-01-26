@@ -5,7 +5,7 @@ import           Control.Monad.Catch
 import           System.Terminal.MonadInput
 import           System.Terminal.MonadPrinter
 
-class (MonadInput m, MonadPrettyPrinter m, MonadFormatPrinter m, MonadColorPrinter m, MonadMask m) => MonadTerminal m where
+class (MonadInput m, MonadPrettyPrinter m, MonadFormatPrinter m, MonadColorPrinter m) => MonadTerminal m where
   -- | Move the cursor `n` lines up. Do not change column.
   moveCursorUp                :: Rows -> m ()
   -- | Move the cursor `n` lines down. Do not change column.
@@ -51,7 +51,12 @@ class (MonadInput m, MonadPrettyPrinter m, MonadFormatPrinter m, MonadColorPrint
   --     when leaving the alternate screen screen buffer.
   --   - The dimensions of the alternate screen buffer are
   --     exactly those of the screen.
-  withAlternateScreenBuffer    :: m () -> m ()
+  useAlternateScreenBuffer    :: Bool -> m ()
+
+withAlternateScreenBuffer :: (MonadTerminal m, MonadMask m) => m a -> m a
+withAlternateScreenBuffer = bracket_
+  (useAlternateScreenBuffer True)
+  (useAlternateScreenBuffer False)
 
 -- http://www.noah.org/python/pexpect/ANSI-X3.64.htm
 -- Erasing parts of the display (EL and ED) in the VT100 is performed thus:

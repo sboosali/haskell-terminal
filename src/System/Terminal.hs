@@ -24,6 +24,7 @@ module System.Terminal
   , ColorMode (..)
     -- ** MonadTerminal
   , MonadTerminal (..)
+  , withAlternateScreenBuffer
     -- * Event Processing
     -- *** waitEvent
   , waitEvent

@@ -1,4 +1,4 @@
-.PHONY: install test clean doc terminal-ev terminal-out terminal-printer
+.PHONY: install test clean doc terminal-ev terminal-out terminal-printer terminal-screen
 
 install:
 	stack install

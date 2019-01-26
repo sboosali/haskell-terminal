@@ -135,7 +135,7 @@ instance (MonadIO m, MonadThrow m, Terminal t) => MonadColorPrinter (TerminalT t
   foreground = A . Foreground
   background = A . Background
 
-instance (MonadIO m, MonadMask m, Terminal t) => MonadTerminal (TerminalT t m) where
+instance (MonadIO m, MonadThrow m, Terminal t) => MonadTerminal (TerminalT t m) where
   moveCursorUp                           = command . MoveCursorUp
   moveCursorDown                         = command . MoveCursorDown
   moveCursorLeft                         = command . MoveCursorLeft
@@ -173,9 +173,7 @@ instance (MonadIO m, MonadMask m, Terminal t) => MonadTerminal (TerminalT t m) w
     ansi <- ask
     liftIO $ atomically $ termScreenSize ansi
 
-  withAlternateScreenBuffer = bracket_
-    (command $ UseAlternateScreenBuffer True)
-    (command $ UseAlternateScreenBuffer False)
+  useAlternateScreenBuffer               = command . UseAlternateScreenBuffer
 
 -- | See https://en.wikipedia.org/wiki/List_of_Unicode_characters
 safeChar :: Char -> Bool
