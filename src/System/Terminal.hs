@@ -12,7 +12,6 @@ module System.Terminal
   , MonadPrinter (..)
     -- ** MonadPrettyPrinter
   , MonadPrettyPrinter (..)
-  , pprint
     -- ** MonadFormatPrinter
   , MonadFormatPrinter (..)
     -- ** MonadColorPrinter

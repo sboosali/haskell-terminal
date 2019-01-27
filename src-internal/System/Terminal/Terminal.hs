@@ -7,31 +7,6 @@ import           Data.Text
 import           System.Terminal.MonadInput
 import           System.Terminal.MonadPrinter
 
-data Command
-  = PutText Text
-  | SetAnnotation SimpleAnnotation
-  | ResetAnnotation SimpleAnnotation
-  | ResetAnnotations
-  | MoveCursorUp Int
-  | MoveCursorDown Int
-  | MoveCursorLeft Int
-  | MoveCursorRight Int
-  | GetCursorPosition
-  | SetCursorPosition (Row, Column)
-  | SetCursorPositionVertical Row
-  | SetCursorPositionHorizontal Column
-  | SaveCursorPosition
-  | RestoreCursorPosition
-  | ShowCursor
-  | HideCursor
-  | ClearLine
-  | ClearLineLeft
-  | ClearLineRight
-  | ClearScreen
-  | ClearScreenAbove
-  | ClearScreenBelow
-  | UseAlternateScreenBuffer Bool
-
 class Terminal t where
   -- | The terminal identification string usually extracted from the
   --   environment variable `TERM`. Should contain values like `xterm`
@@ -80,3 +55,33 @@ class Terminal t where
   --   It may block as depending on implementation it usually requires an
   --   in-band roundtrip to the terminal. Use it wisely.
   termGetCursorPosition :: t -> IO (Row, Column)
+
+-- | The commands every terminal needs to understand.
+--
+-- This shall only be extended when something is missing
+-- that all terminals understand. Otherwise portability will
+-- be lost.
+data Command
+  = PutText Text
+  | SetAnnotation SimpleAnnotation
+  | ResetAnnotation SimpleAnnotation
+  | ResetAnnotations
+  | MoveCursorUp Int
+  | MoveCursorDown Int
+  | MoveCursorLeft Int
+  | MoveCursorRight Int
+  | GetCursorPosition
+  | SetCursorPosition (Row, Column)
+  | SetCursorPositionVertical Row
+  | SetCursorPositionHorizontal Column
+  | SaveCursorPosition
+  | RestoreCursorPosition
+  | ShowCursor
+  | HideCursor
+  | ClearLine
+  | ClearLineLeft
+  | ClearLineRight
+  | ClearScreen
+  | ClearScreenAbove
+  | ClearScreenBelow
+  | UseAlternateScreenBuffer Bool

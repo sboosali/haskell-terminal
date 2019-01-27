@@ -103,7 +103,7 @@ data Key
   | EnterKey
   | InsertKey
   | DeleteKey
-  | HomeKey      -- ^ Pos 1
+  | HomeKey
   | BeginKey
   | EndKey
   | PageUpKey

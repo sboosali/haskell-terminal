@@ -75,6 +75,7 @@ withTerminal action = do
                 atomically (void (takeTMVar cursorPosition) <|> pure ())
                 -- Send cursor position report request.
                 Text.hPutStr IO.stdout (ansiEncode GetCursorPosition)
+                IO.hFlush IO.stdout
                 -- Wait for the result variable to be filled by the input processor.
                 atomically (takeTMVar cursorPosition)
             }

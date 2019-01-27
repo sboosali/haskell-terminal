@@ -25,7 +25,7 @@ dependencies:
 - base >= 4.7 && < 5
 - async
 - bytestring
-- exceptions
+- exceptions >= 0.10.0
 - prettyprinter
 - stm
 - text
