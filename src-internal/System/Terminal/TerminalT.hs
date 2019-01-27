@@ -6,15 +6,18 @@ module System.Terminal.TerminalT
   )
 where
 
+import           Control.Applicative                ((<|>))
+import           Control.Monad                      (when)
 import           Control.Monad.Catch
 import           Control.Monad.IO.Class
 import           Control.Monad.STM
 import           Control.Monad.Trans.Class
 import           Control.Monad.Trans.Reader
-import           Data.Foldable                   (forM_)
+import           Data.Foldable                      (forM_)
 import qualified Data.Text                       as Text
 import qualified Data.Text.Prettyprint.Doc       as PP
 import           Prelude                     hiding (putChar)
+import           Control.Exception                  (AsyncException (..))
 
 import           System.Terminal.MonadInput
 import           System.Terminal.MonadPrinter
@@ -171,7 +174,7 @@ safeChar c
   | c  < '\xa0' = False -- C1 up to start of Latin-1.
   | otherwise   = True
 
-command :: (MonadIO m, Terminal t) => Command -> TerminalT t m ()
-command c = TerminalT $ do
+command :: (MonadIO m, MonadThrow m, Terminal t) => Command -> TerminalT t m ()
+command c = TerminalT do
   t <- ask
   liftIO $ termCommand t c

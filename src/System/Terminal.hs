@@ -31,6 +31,7 @@ module System.Terminal
   , waitEventOrElse
     -- *** waitSignalOrElse
   , waitSignalOrElse
+  , askInterrupted
   , MonadInput (..)
     -- ** Events
   , Event (..)
@@ -54,6 +55,7 @@ module System.Terminal
     -- * Low-Level
     -- ** Terminal
   , Terminal (..)
+  , System.Terminal.Platform.LocalTerminal ()
     -- ** Misc
   , Row, Rows, Column, Columns
   , Command (..)
@@ -84,6 +86,5 @@ import qualified System.Terminal.Platform
 --     `putTextLn` "Hello world!"
 --     `flush`
 -- @
-withTerminal :: (MonadIO m, MonadMask m) => (forall t. Terminal t => t -> m a) -> m a
+withTerminal :: (MonadIO m, MonadMask m) => (System.Terminal.Platform.LocalTerminal -> m a) -> m a
 withTerminal = System.Terminal.Platform.withTerminal
-

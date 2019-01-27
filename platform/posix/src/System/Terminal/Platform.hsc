@@ -1,6 +1,7 @@
 {-# LANGUAGE LambdaCase, RankNTypes #-}
 module System.Terminal.Platform
   ( withTerminal
+  , LocalTerminal ()
   ) where
 
 import           Control.Applicative
@@ -54,7 +55,7 @@ instance Terminal LocalTerminal where
     termGetScreenSize     = localGetScreenSize
     termGetCursorPosition = localGetCursorPosition
 
-withTerminal :: (MonadIO m, MonadMask m) => (forall t. Terminal t => t -> m a) -> m a
+withTerminal :: (MonadIO m, MonadMask m) => (LocalTerminal -> m a) -> m a
 withTerminal action = do
     term           <- BS8.pack . fromMaybe "xterm" <$> liftIO (lookupEnv "TERM")
     mainThread     <- liftIO myThreadId
