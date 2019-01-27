@@ -179,7 +179,7 @@ data WindowEvent
 
 data DeviceEvent
   = DeviceAttributesReport String
-  | CursorPositionReport (Int,Int)
+  | CursorPositionReport (Row, Column)
   deriving (Eq, Ord, Show)
 
 data Signal

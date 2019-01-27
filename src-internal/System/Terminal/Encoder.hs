@@ -55,6 +55,7 @@ ansiEncode = \case
     MoveCursorDown i                                  -> "\ESC[" <> pack (show i) <> "B"
     MoveCursorLeft i                                  -> "\ESC[" <> pack (show i) <> "D"
     MoveCursorRight i                                 -> "\ESC[" <> pack (show i) <> "C"
+    GetCursorPosition                                 -> "\ESC[6n"
     SetCursorPosition (x,y)                           -> "\ESC[" <> pack (show $ x + 1) <> ";" <> pack (show $ y + 1) <> "H"
     SetCursorPositionVertical i                       -> "\ESC[" <> pack (show $ i + 1) <> "d"
     SetCursorPositionHorizontal i                     -> "\ESC[" <> pack (show $ i + 1) <> "G"

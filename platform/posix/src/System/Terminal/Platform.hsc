@@ -37,43 +37,53 @@ import           System.Terminal.Encoder
 #include "hs_terminal.h"
 
 data LocalTerminal
-  = LocalTerminal
-  { localType         :: BS.ByteString
-  , localEvent        :: STM Event
-  , localSignal       :: STM Signal
-  , localScreenSize   :: STM (Rows, Columns)
-  }
+    = LocalTerminal
+    { localType              :: BS.ByteString
+    , localEvent             :: STM Event
+    , localSignal            :: STM Signal
+    , localGetScreenSize     :: IO (Rows, Columns)
+    , localGetCursorPosition :: IO (Row, Column)
+    }
 
 instance Terminal LocalTerminal where
-  termType         = localType
-  termEvent        = localEvent
-  termSignal       = localSignal
-  termCommand _ c  = Text.hPutStr IO.stdout (ansiEncode c)
-  termFlush _      = IO.hFlush IO.stdout
-  termScreenSize   = localScreenSize
+    termType              = localType
+    termEvent             = localEvent
+    termSignal            = localSignal
+    termCommand _ c       = Text.hPutStr IO.stdout (ansiEncode c)
+    termFlush _           = IO.hFlush IO.stdout
+    termGetScreenSize     = localGetScreenSize
+    termGetCursorPosition = localGetCursorPosition
 
 withTerminal :: (MonadIO m, MonadMask m) => (forall t. Terminal t => t -> m a) -> m a
 withTerminal action = do
-  term        <- BS8.pack . fromMaybe "xterm" <$> liftIO (lookupEnv "TERM")
-  mainThread  <- liftIO myThreadId
-  signal      <- liftIO newEmptyTMVarIO
-  events      <- liftIO newTChanIO
-  screenSize  <- liftIO (newTVarIO =<< getWindowSize)
-  withTermiosSettings $ \termios->
-    withResizeHandler (handleResize screenSize events) $
-    withInputProcessing mainThread termios signal events $ 
-    action $ LocalTerminal {
-        localType           = term
-      , localEvent          = readTChan events
-      , localSignal         = takeTMVar signal
-      , localScreenSize     = readTVar screenSize
-      }
-  where
-    handleResize screenSize events = do
-      ws <- getWindowSize
-      atomically do
-        writeTVar screenSize ws
-        writeTChan events (WindowEvent $ WindowSizeChanged ws)
+    term           <- BS8.pack . fromMaybe "xterm" <$> liftIO (lookupEnv "TERM")
+    mainThread     <- liftIO myThreadId
+    signal         <- liftIO newEmptyTMVarIO
+    events         <- liftIO newTChanIO
+    screenSize     <- liftIO (newTVarIO =<< getWindowSize)
+    cursorPosition <- liftIO newEmptyTMVarIO
+    withTermiosSettings $ \termios->
+        withResizeHandler (handleResize screenSize events) $
+        withInputProcessing mainThread termios cursorPosition signal events $ 
+        action LocalTerminal
+            { localType              = term
+            , localEvent             = readTChan events
+            , localSignal            = takeTMVar signal
+            , localGetScreenSize     = atomically (readTVar screenSize)
+            , localGetCursorPosition = do
+                -- Empty the result variable.
+                atomically (void (takeTMVar cursorPosition) <|> pure ())
+                -- Send cursor position report request.
+                Text.hPutStr IO.stdout (ansiEncode GetCursorPosition)
+                -- Wait for the result variable to be filled by the input processor.
+                atomically (takeTMVar cursorPosition)
+            }
+    where
+        handleResize screenSize events = do
+            ws <- getWindowSize
+            atomically do
+                writeTVar screenSize ws
+                writeTChan events (WindowEvent $ WindowSizeChanged ws)
 
 specialChar :: Termios -> Modifiers -> Char -> Maybe Event
 specialChar t mods = \case
@@ -109,8 +119,9 @@ withResizeHandler handler = bracket installHandler restoreHandler . const
       void $ stg_sig_install (#const SIGWINCH) oldAction nullPtr
       pure ()
 
-withInputProcessing :: (MonadIO m, MonadMask m) => ThreadId -> Termios -> TMVar Signal -> TChan Event -> m a -> m a
-withInputProcessing mainThread termios signal events =
+withInputProcessing :: (MonadIO m, MonadMask m) =>
+    ThreadId -> Termios -> TMVar (Row, Column) -> TMVar Signal -> TChan Event -> m a -> m a
+withInputProcessing mainThread termios cursorPosition signal events =
     bracket (liftIO $ A.async $ run decoder) (liftIO . A.cancel) . const
     where
         run :: Decoder -> IO ()
@@ -141,9 +152,17 @@ withInputProcessing mainThread termios signal events =
         decoder :: Decoder
         decoder = ansiDecoder (specialChar termios)
 
+        -- Adds events to the event stream and catches certain events
+        -- that require special treatment.
         writeEvent :: Event -> IO ()
         writeEvent = \case
-            SignalEvent InterruptSignal -> handleInterrupt
+            SignalEvent InterruptSignal ->
+                handleInterrupt
+            DeviceEvent (CursorPositionReport pos) ->
+                -- One of the alternatives will succeed.
+                -- The second one is not strict required but a fail safe in order
+                -- to never block in case the terminal sends a report without request.
+                atomically (putTMVar cursorPosition pos <|> void (swapTMVar cursorPosition pos))
             ev -> atomically (writeTChan events ev)
 
         -- This function is responsible for passing interrupt signals and
