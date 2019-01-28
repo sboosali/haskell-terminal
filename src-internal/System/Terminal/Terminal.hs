@@ -21,18 +21,15 @@ class Terminal t where
   --   Some form of `orElse` needs to be used in a correct way for reading
   --   several events at once.
   termEvent             :: t -> STM Event
-  -- | This transaction succeeds as soon as an interrupt event occurs.
+  -- | This transaction succeeds as soon as an interrupt occurs.
   --   Executing the transaction shall reset an interrupt flag maintained
   --   by a supervising background thread.
   --
   --   It is mandatory to regularly check this transaction in order to signal
-  --   responsiveness to the background thread. The supervisor is otherwise
-  --   advised to terminate the program as soon as a second interrupt arrives.
-  --
-  --   Note: This is a very low-level operation. Operations like `waitEvent`,
-  --   `waitEventOrElse` or `waitInterruptOrElse` are more convenient and do
-  --   this automatically.
-  termSignal            :: t -> STM Signal
+  --   responsiveness to the background thread. The execution environment is otherwise
+  --   advised to throw an `System.IO.Error.UserInterrupt` exception as soon as a
+  --   second interrupt arrives and it sees a previous one unhandled.
+  termInterrupt         :: t -> STM ()
   -- | This transaction appends a piece of `Data.Text.Text` to the output buffer.
   --   It shall block when the buffer exeeded its capacity
   --   and unblock as soon as space becomes available again.

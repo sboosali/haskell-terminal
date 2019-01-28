@@ -11,7 +11,7 @@ import           Control.Concurrent.STM.TChan
 import           Control.Concurrent.STM.TVar
 import           Control.Concurrent.STM.TMVar
 import qualified Control.Exception             as E
-import           Control.Monad                 (forM_, void)
+import           Control.Monad                 (forM_, void, when)
 import           Control.Monad.Catch hiding    (handle)
 import           Control.Monad.IO.Class
 import           Control.Monad.STM
@@ -41,7 +41,7 @@ data LocalTerminal
     = LocalTerminal
     { localType              :: BS.ByteString
     , localEvent             :: STM Event
-    , localSignal            :: STM Signal
+    , localInterrupt         :: STM ()
     , localGetScreenSize     :: IO (Rows, Columns)
     , localGetCursorPosition :: IO (Row, Column)
     }
@@ -49,7 +49,7 @@ data LocalTerminal
 instance Terminal LocalTerminal where
     termType              = localType
     termEvent             = localEvent
-    termSignal            = localSignal
+    termInterrupt         = localInterrupt
     termCommand _ c       = Text.hPutStr IO.stdout (ansiEncode c)
     termFlush _           = IO.hFlush IO.stdout
     termGetScreenSize     = localGetScreenSize
@@ -59,17 +59,17 @@ withTerminal :: (MonadIO m, MonadMask m) => (LocalTerminal -> m a) -> m a
 withTerminal action = do
     term           <- BS8.pack . fromMaybe "xterm" <$> liftIO (lookupEnv "TERM")
     mainThread     <- liftIO myThreadId
-    signal         <- liftIO newEmptyTMVarIO
+    interrupt      <- liftIO (newTVarIO False)
     events         <- liftIO newTChanIO
     screenSize     <- liftIO (newTVarIO =<< getWindowSize)
     cursorPosition <- liftIO newEmptyTMVarIO
     withTermiosSettings $ \termios->
         withResizeHandler (handleResize screenSize events) $
-        withInputProcessing mainThread termios cursorPosition signal events $ 
+        withInputProcessing mainThread termios cursorPosition interrupt events $ 
         action LocalTerminal
             { localType              = term
             , localEvent             = readTChan events
-            , localSignal            = takeTMVar signal
+            , localInterrupt         = swapTVar interrupt False >>= check
             , localGetScreenSize     = atomically (readTVar screenSize)
             , localGetCursorPosition = do
                 -- Empty the result variable.
@@ -89,7 +89,7 @@ withTerminal action = do
 
 specialChar :: Termios -> Modifiers -> Char -> Maybe Event
 specialChar t mods = \case
-    c | c == termiosVINTR  t -> Just $ SignalEvent InterruptSignal
+    c | c == termiosVINTR  t -> Just $ SignalEvent Interrupt
       | c == termiosVERASE t -> Just $ KeyEvent BackspaceKey mods
       | c == '\n'            -> Just $ KeyEvent EnterKey     mods
       | c == '\t'            -> Just $ KeyEvent TabKey       mods
@@ -122,8 +122,8 @@ withResizeHandler handler = bracket installHandler restoreHandler . const
       pure ()
 
 withInputProcessing :: (MonadIO m, MonadMask m) =>
-    ThreadId -> Termios -> TMVar (Row, Column) -> TMVar Signal -> TChan Event -> m a -> m a
-withInputProcessing mainThread termios cursorPosition signal events =
+    ThreadId -> Termios -> TMVar (Row, Column) -> TVar Bool -> TChan Event -> m a -> m a
+withInputProcessing mainThread termios cursorPosition interrupt events =
     bracket (liftIO $ A.async $ run decoder) (liftIO . A.cancel) . const
     where
         run :: Decoder -> IO ()
@@ -158,13 +158,14 @@ withInputProcessing mainThread termios cursorPosition signal events =
         -- that require special treatment.
         writeEvent :: Event -> IO ()
         writeEvent = \case
-            SignalEvent InterruptSignal ->
+            SignalEvent Interrupt ->
                 handleInterrupt
-            DeviceEvent (CursorPositionReport pos) ->
+            ev@(DeviceEvent (CursorPositionReport pos)) -> atomically do
                 -- One of the alternatives will succeed.
                 -- The second one is not strict required but a fail safe in order
                 -- to never block in case the terminal sends a report without request.
-                atomically (putTMVar cursorPosition pos <|> void (swapTMVar cursorPosition pos))
+                putTMVar cursorPosition pos <|> void (swapTMVar cursorPosition pos)
+                writeTChan events ev
             ev -> atomically (writeTChan events ev)
 
         -- This function is responsible for passing interrupt signals and
@@ -175,12 +176,10 @@ withInputProcessing mainThread termios cursorPosition signal events =
         -- the main thread is not responsive.
         handleInterrupt  :: IO ()
         handleInterrupt = do
-            unhandledSignal <- liftIO $ atomically do
-                writeTChan events (SignalEvent InterruptSignal)
-                (putTMVar signal InterruptSignal >> pure Nothing) <|> (Just <$> swapTMVar signal InterruptSignal)
-            case unhandledSignal of
-                Just InterruptSignal -> E.throwTo mainThread E.UserInterrupt
-                _                    -> pure ()
+            unhandledInterrupt <- atomically do
+                writeTChan events (SignalEvent Interrupt)
+                swapTVar interrupt True
+            when unhandledInterrupt (E.throwTo mainThread E.UserInterrupt)
 
         -- The timeout duration has been choosen as a tradeoff between correctness
         -- (actual transmission or scheduling delays shall not be misinterpreted) and

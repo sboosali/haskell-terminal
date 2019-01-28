@@ -1,6 +1,7 @@
 module System.Terminal.MonadInput where
 
-import           Control.Monad (void)
+import           Control.Applicative ((<|>))
+import           Control.Monad (void, when)
 import           Control.Monad.IO.Class
 import           Control.Monad.STM
 import           Data.Bits
@@ -28,135 +29,140 @@ type Columns = Int
 --    This allows to flush all unprocessed events from the stream that
 --    occured before the interrupt.
 class (MonadIO m) => MonadInput m where
-  -- | Wait for the next signal or the next event transformed by a given mapper.
+  -- | Wait for the next interrupt or next event transformed by a given mapper.
   --
   -- * The first mapper parameter is a transaction that succeeds as
-  --   soon as a signal occurs. Executing this transaction
-  --   resets the signal flag. If the signal is an interrupt and is not reset
-  --   before a second interrupt occurs, the current thread shall
+  --   soon as an interrupt occurs. Executing this transaction
+  --   resets the interrupt flag. When a second interrupt occurs before
+  --   the interrupt flag has been reset, the current thread shall
   --   receive an `Control.Exception.AsyncException.UserInterrupt`.
   -- * The second mapper parameter is a transaction that succeeds as
   --   as soon as the next event arrives and removes that event from the
-  --   stream of events. It may be executed several times within the same
-  --   transaction, but might not succeed every time.
-  waitMapSignalAndEvents :: (STM Signal -> STM Event -> STM a) -> m a
+  --   stream of events. It shall be executed at most once within a single
+  --   transaction or the transaction would block until the requested number
+  --   of events is available.
+  -- * NB: For each interrupt an `Interrupt` event occurs in the event stream.
+  --   Take caution in order not to handle them twice.
+  -- * The mapper may also be used in order to additionally wait on external
+  --   events (like an `Control.Monad.Async.Async` to complete).
+    waitInterruptOrEvent :: (STM () -> STM Event -> STM a) -> m a
 
 -- | Wait for the next event.
 --
 -- * Returns as soon as an event occurs.
--- * This operation resets the signal flag when encountering a signal,
---   signaling responsiveness to the execution environment.
--- * `Event.SignalEvent`s occur in the event stream at their correct
---   position wrt to ordering of events. They are returned as regular
---   events. This is eventually not desired when trying to handle signals
---   with highest priority and `waitSignalOrEvent` or `waitSignalOrElse` should
---   be considered then.
+-- * This operation resets the interrupt flag, signaling responsiveness to
+--   the execution environment. Be careful: There might be several events
+--   preceding the `Interrupt` event in the event stream. FIXME
 waitEvent :: MonadInput m => m Event
-waitEvent = waitMapSignalAndEvents $ \sig evs-> do
-  ev <- evs
-  case ev of
-    SignalEvent {} -> void sig `orElse` pure ()
-    _              -> pure ()
-  pure ev
+waitEvent = waitInterruptOrEvent $ \intr evs-> do
+    ev <- evs
+    when (ev == SignalEvent Interrupt) (intr <|> pure ())
+    pure ev
 
 -- | Wait for the next event or a given transaction.
 --
 -- * Returns as soon as an event occurs or the transaction succeeds.
--- * This operation resets the signal flag when encountering a signal,
+-- * This operation resets the interrupt flag when encountering an interrupt,
 --   signaling responsiveness to the execution environment.
--- * `Event.SignalEvent`s occur in the event stream at their correct
---   position wrt to ordering of events. They are returned as regular
---   events. This is eventually not desired when trying to handle signals
---   with highest priority and `waitSignalOrElse` should
---   be considered then.
+-- * `Interupt`s occur in the event stream at their correct
+--   position wrt to ordering of events. This is eventually not desired
+--   when trying to handle interrupts with highest priority and
+--  `waitSignalOrElse` should be considered then.
 waitEventOrElse :: MonadInput m => STM a -> m (Either Event a)
-waitEventOrElse stma = waitMapSignalAndEvents $ \sig evs -> do
-  eva <- (Left <$> evs) `orElse` (Right <$> stma)
-  case eva of
-    Left (SignalEvent {}) -> void sig `orElse` pure ()
-    _                     -> pure ()
-  pure eva
+waitEventOrElse stma = waitInterruptOrEvent $ \intr evs -> do
+    let waitEvent = do
+            ev <- evs
+            when (ev == SignalEvent Interrupt) (intr <|> pure ())
+            pure (Left ev)
+    let waitElse = Right <$> stma
+    waitEvent <|> waitElse
 
--- | Wait simultaneously for the next signal or a given transaction.
+-- | Wait simultaneously for the next interrupt or a given transaction.
 --
--- * Returns `Left` on signal and `Right` when the supplied transaction
---   succeeds first.
--- * This operation resets the signal flag, signaling responsiveness
+-- * Returns `Nothing` on interrupt and `Just` when the supplied
+--   transaction succeeds first.
+-- * This operation resets the interrupt flag, signaling responsiveness
 --   to the execution environment.
--- * All pending events are dropped in case of a signal.
-waitSignalOrElse :: MonadInput m => STM a -> m (Either Signal a)
-waitSignalOrElse stma = waitMapSignalAndEvents $ \sig evs ->
-  (sig >>= \s -> dropPending evs >> pure (Left s)) `orElse` (Right <$> stma)
-  where
-    dropPending:: STM Event -> STM ()
-    dropPending evs = ((evs >> pure True) `orElse` pure False) >>= \case
-      True  -> dropPending evs
-      False -> pure ()
+-- * All pending events up to the interrupt are dropped in case of an interrupt.
+waitInterruptOrElse :: MonadInput m => STM a -> m (Maybe a)
+waitInterruptOrElse stma = waitInterruptOrEvent $ \intr evs -> do
+    let waitInterrupt = do
+            intr
+            dropPending evs
+            pure Nothing
+    let waitElse = Just <$> stma
+    waitInterrupt <|> waitElse
+    where
+        dropPending:: STM Event -> STM ()
+        dropPending evs = ((Just <$> evs) <|> pure Nothing) >>= \case
+            Just (SignalEvent Interrupt) -> pure ()
+            Just ev                      -> dropPending evs
+            Nothing                      -> pure ()
 
--- | Ask whether an interrupt signal is pending.
+-- | Check whether an interrupt is pending.
 --
--- * This operation resets the signal flag, signaling responsiveness
+-- * This operation resets the interrupt flag, signaling responsiveness
 --   to the execution environment.
--- * All pending events are dropped in case of a signal.
-askInterrupted :: MonadInput m => m Bool
-askInterrupted = waitSignalOrElse (pure ()) >>= \case
-    Left InterruptSignal -> pure True
-    _                    -> pure False
+-- * All pending events up to the interrupt are dropped in case of an interrupt.
+checkInterrupt :: MonadInput m => m Bool
+checkInterrupt = waitInterruptOrElse (pure ()) >>= \case
+    Nothing -> pure True
+    _       -> pure False
+
+data Event
+    = KeyEvent Key Modifiers
+    | MouseEvent MouseEvent
+    | WindowEvent WindowEvent
+    | DeviceEvent DeviceEvent
+    | SignalEvent Signal
+    | OtherEvent String
+    deriving (Eq,Ord,Show)
 
 data Key
-  = CharKey Char
-  | TabKey
-  | SpaceKey
-  | BackspaceKey
-  | EnterKey
-  | InsertKey
-  | DeleteKey
-  | HomeKey
-  | BeginKey
-  | EndKey
-  | PageUpKey
-  | PageDownKey
-  | EscapeKey
-  | PrintKey
-  | PauseKey
-  | ArrowKey Direction
-  | FunctionKey Int
-  deriving (Eq,Ord,Show)
+    = CharKey Char
+    | TabKey
+    | SpaceKey
+    | BackspaceKey
+    | EnterKey
+    | InsertKey
+    | DeleteKey
+    | HomeKey
+    | BeginKey
+    | EndKey
+    | PageUpKey
+    | PageDownKey
+    | EscapeKey
+    | PrintKey
+    | PauseKey
+    | ArrowKey Direction
+    | FunctionKey Int
+    deriving (Eq,Ord,Show)
 
 newtype Modifiers = Modifiers Int
-  deriving (Eq, Ord, Bits)
+    deriving (Eq, Ord, Bits)
 
 instance Semigroup Modifiers where
-  Modifiers a <> Modifiers b = Modifiers (a .|. b)
+    Modifiers a <> Modifiers b = Modifiers (a .|. b)
 
 instance Monoid Modifiers where
-  mempty = Modifiers 0
+    mempty = Modifiers 0
 
 instance Show Modifiers where
-  show (Modifiers 0) = "mempty"
-  show (Modifiers 1) = "shiftKey"
-  show (Modifiers 2) = "ctrlKey"
-  show (Modifiers 4) = "altKey"
-  show (Modifiers 8) = "metaKey"
-  show i = "(" ++ intercalate " <> " ls ++ ")"
-    where
-      ls = foldl (\acc x-> if x .&. i /= mempty then show x:acc else acc) []
-                 [metaKey, altKey, ctrlKey, shiftKey]
+    show (Modifiers 0) = "mempty"
+    show (Modifiers 1) = "shiftKey"
+    show (Modifiers 2) = "ctrlKey"
+    show (Modifiers 4) = "altKey"
+    show (Modifiers 8) = "metaKey"
+    show i = "(" ++ intercalate " <> " ls ++ ")"
+        where
+        ls = foldl (\acc x-> if x .&. i /= mempty then show x:acc else acc) []
+                    [metaKey, altKey, ctrlKey, shiftKey]
 
 shiftKey, ctrlKey, altKey, metaKey :: Modifiers
 shiftKey = Modifiers 1
 ctrlKey  = Modifiers 2
 altKey   = Modifiers 4
 metaKey  = Modifiers 8
-
-data Event
-  = KeyEvent Key Modifiers
-  | MouseEvent MouseEvent
-  | WindowEvent WindowEvent
-  | DeviceEvent DeviceEvent
-  | SignalEvent Signal
-  | OtherEvent String
-  deriving (Eq,Ord,Show)
 
 data MouseEvent
   = MouseMoved          (Int,Int)
@@ -191,6 +197,6 @@ data DeviceEvent
   deriving (Eq, Ord, Show)
 
 data Signal
-  = InterruptSignal
+  = Interrupt
   | OtherSignal BS.ByteString
   deriving (Eq, Ord, Show)

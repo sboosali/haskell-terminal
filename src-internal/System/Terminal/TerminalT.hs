@@ -56,9 +56,9 @@ instance MonadTrans (TerminalT t) where
     lift = TerminalT . lift
 
 instance (MonadIO m, Terminal t) => MonadInput (TerminalT t m) where
-    waitMapSignalAndEvents f = TerminalT do
+    waitInterruptOrEvent f = TerminalT do
         t <- ask
-        liftIO $ atomically $ f (termSignal t) (termEvent t)
+        liftIO $ atomically $ f (termInterrupt t) (termEvent t)
 
 instance (MonadIO m, MonadThrow m, Terminal t) => MonadPrinter (TerminalT t m) where
     putChar c =

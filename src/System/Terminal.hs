@@ -29,9 +29,10 @@ module System.Terminal
   , waitEvent
     -- *** waitEventOrElse
   , waitEventOrElse
-    -- *** waitSignalOrElse
-  , waitSignalOrElse
-  , askInterrupted
+    -- *** waitInterruptOrElse
+  , waitInterruptOrElse
+    -- ** checkInterrupt
+  , checkInterrupt
   , MonadInput (..)
     -- ** Events
   , Event (..)
