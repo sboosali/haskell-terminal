@@ -5,7 +5,6 @@ import           Data.ByteString
 import           Data.Text
 
 import           System.Terminal.MonadInput
-import           System.Terminal.MonadPrinter
 
 class Terminal t where
   -- | The terminal identification string usually extracted from the
@@ -60,9 +59,9 @@ class Terminal t where
 -- be lost.
 data Command
   = PutText Text
-  | SetAnnotation SimpleAnnotation
-  | ResetAnnotation SimpleAnnotation
-  | ResetAnnotations
+  | SetAttribute Attribute
+  | ResetAttribute Attribute
+  | ResetAttributes
   | MoveCursorUp Int
   | MoveCursorDown Int
   | MoveCursorLeft Int
@@ -82,3 +81,32 @@ data Command
   | ClearScreenAbove
   | ClearScreenBelow
   | UseAlternateScreenBuffer Bool
+  deriving (Eq, Ord, Show)
+
+data Attribute
+  = Bold
+  | Italic
+  | Underlined
+  | Inverted
+  | Foreground Color
+  | Background Color
+  deriving (Eq, Ord, Show)
+
+data Color
+  = Black
+  | Red
+  | Green
+  | Yellow
+  | Blue
+  | Magenta
+  | Cyan
+  | White
+  | BrightBlack
+  | BrightRed
+  | BrightGreen
+  | BrightYellow
+  | BrightBlue
+  | BrightMagenta
+  | BrightCyan
+  | BrightWhite
+  deriving (Eq, Ord, Show)

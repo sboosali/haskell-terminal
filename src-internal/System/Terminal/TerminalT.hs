@@ -21,8 +21,9 @@ import           Control.Exception                  (AsyncException (..))
 
 import           System.Terminal.MonadInput
 import           System.Terminal.MonadPrinter
+import           System.Terminal.MonadScreen
 import           System.Terminal.MonadTerminal
-import           System.Terminal.Terminal
+import qualified System.Terminal.Terminal        as T
 
 -- | This monad transformer represents terminal applications.
 --
@@ -49,120 +50,103 @@ newtype TerminalT t m a
     deriving (Functor, Applicative, Monad, MonadIO, MonadThrow, MonadCatch, MonadMask)
 
 -- | Run a `TerminalT` application on the given terminal.
-runTerminalT :: (MonadIO m, MonadMask m, Terminal t) => TerminalT t m a -> t -> m a
+runTerminalT :: (MonadIO m, MonadMask m, T.Terminal t) => TerminalT t m a -> t -> m a
 runTerminalT (TerminalT action) t = runReaderT action t
 
 instance MonadTrans (TerminalT t) where
     lift = TerminalT . lift
 
-instance (MonadIO m, Terminal t) => MonadInput (TerminalT t m) where
+instance (MonadIO m, T.Terminal t) => MonadInput (TerminalT t m) where
     waitInterruptOrEvent f = TerminalT do
         t <- ask
-        liftIO $ atomically $ f (termInterrupt t) (termEvent t)
+        liftIO $ atomically $ f (T.termInterrupt t) (T.termEvent t)
 
-instance (MonadIO m, MonadThrow m, Terminal t) => MonadPrinter (TerminalT t m) where
+instance (MonadIO m, MonadThrow m, T.Terminal t) => MonadPrinter (TerminalT t m) where
     putChar c =
-        command $ PutText $ Text.singleton c
+        command $ T.PutText $ Text.singleton c
     putString cs = forM_ (filter safeChar cs) $ \c->
-        command $ PutText $ Text.singleton c
+        command $ T.PutText $ Text.singleton c
     putText t = loop (Text.filter safeChar t)
         where
         loop t0
             | Text.null t0 = pure ()
             | otherwise    = let (t1,t2) = Text.splitAt 80 t0
-                             in  command (PutText t1) >> loop t2
+                             in  command (T.PutText t1) >> loop t2
     flush = TerminalT do
         t <- ask
-        liftIO  $ termFlush t
+        liftIO  $ T.termFlush t
     getLineWidth = TerminalT do
         t <- ask
-        liftIO (snd <$> termGetScreenSize t)
+        liftIO (snd <$> T.termGetScreenSize t)
 
-instance (MonadIO m, MonadThrow m, Terminal t) => MonadPrettyPrinter (TerminalT t m) where
-    data Annotation (TerminalT t m) = A SimpleAnnotation deriving (Eq, Ord, Show)
-    putDocLn doc = putDoc doc >> putLn
-    putDoc doc = do
-        w <- getLineWidth
-        resetAnnotations
-        render [] (sdoc w)
-        resetAnnotations
-        flush
-        where
-            options w   = PP.defaultLayoutOptions { PP.layoutPageWidth = PP.AvailablePerLine w 1.0 }
-            sdoc w      = PP.layoutSmart (options w) doc
-            oldFG []                   = Nothing
-            oldFG (A (Foreground c):_) = Just c
-            oldFG (_:xs)               = oldFG xs
-            oldBG []                   = Nothing
-            oldBG (A (Background c):_) = Just c
-            oldBG (_:xs)               = oldBG xs
-            render anns = \case
-                PP.SFail           -> pure ()
-                PP.SEmpty          -> pure ()
-                PP.SChar c ss      -> putChar c >> render anns ss
-                PP.SText _ t ss    -> putText t >> render anns ss
-                PP.SLine n ss      -> putLn >> putText (Text.replicate n " ") >> render anns ss
-                PP.SAnnPush ann ss -> setAnnotation ann >> render (ann:anns) ss
-                PP.SAnnPop ss      -> case anns of
-                    []                     -> render [] ss
-                    (A Bold         :anns')
-                        | A Bold       `elem` anns' -> pure ()
-                        | otherwise                 -> resetAnnotation (A Bold)       >> render anns' ss
-                    (A Italic       :anns')
-                        | A Italic     `elem` anns' -> pure ()
-                        | otherwise                 -> resetAnnotation (A Italic)     >> render anns' ss
-                    (A Underlined   :anns')
-                        | A Underlined `elem` anns' -> pure ()
-                        | otherwise                 -> resetAnnotation (A Underlined) >> render anns' ss
-                    (A Inverted     :anns')
-                        | A Inverted   `elem` anns' -> pure ()
-                        | otherwise                 -> resetAnnotation (A Inverted)   >> render anns' ss
-                    (A (Foreground c) :anns') -> case oldFG anns' of
-                        Just d  -> setAnnotation   (A (Foreground d)) >> render anns' ss
-                        Nothing -> resetAnnotation (A (Foreground c)) >> render anns' ss
-                    (A (Background c) :anns') -> case oldBG anns' of
-                        Just d  -> setAnnotation   (A (Background d)) >> render anns' ss
-                        Nothing -> resetAnnotation (A (Background c)) >> render anns' ss
+instance (MonadIO m, MonadThrow m, T.Terminal t) => MonadMarkupPrinter (TerminalT t m) where
+    data Attribute (TerminalT t m) = AttributeT T.Attribute deriving (Eq, Ord, Show)
+    setAttribute   (AttributeT a)  = command (T.SetAttribute   a)
+    resetAttribute (AttributeT a)  = command (T.ResetAttribute a)
+    resetAttributes                = command T.ResetAttributes
+    resetsAttribute (AttributeT T.Bold       {}) (AttributeT T.Bold       {}) = True
+    resetsAttribute (AttributeT T.Italic     {}) (AttributeT T.Italic     {}) = True
+    resetsAttribute (AttributeT T.Underlined {}) (AttributeT T.Underlined {}) = True
+    resetsAttribute (AttributeT T.Inverted   {}) (AttributeT T.Inverted   {}) = True
+    resetsAttribute (AttributeT T.Foreground {}) (AttributeT T.Foreground {}) = True
+    resetsAttribute (AttributeT T.Foreground {}) (AttributeT T.Background {}) = True
+    resetsAttribute _                            _                            = False 
 
-    setAnnotation   (A a) = command (SetAnnotation   a)
-    resetAnnotation (A a) = command (ResetAnnotation a)
-    resetAnnotations      = command ResetAnnotations
+instance (MonadIO m, MonadThrow m, T.Terminal t) => MonadFormattingPrinter (TerminalT t m) where
+    bold       = AttributeT T.Bold
+    italic     = AttributeT T.Italic
+    underlined = AttributeT T.Underlined
+    inverted   = AttributeT T.Inverted
 
-instance (MonadIO m, MonadThrow m, Terminal t) => MonadFormatPrinter (TerminalT t m) where
-    bold       = A Bold
-    italic     = A Italic
-    underlined = A Underlined
+instance (MonadIO m, MonadThrow m, T.Terminal t) => MonadColorPrinter (TerminalT t m) where
+    data Color (TerminalT t m) = ColorT T.Color deriving (Eq, Ord, Show)
+    black                      = ColorT T.Black
+    red                        = ColorT T.Red
+    green                      = ColorT T.Green
+    yellow                     = ColorT T.Yellow
+    blue                       = ColorT T.Blue
+    magenta                    = ColorT T.Magenta
+    cyan                       = ColorT T.Cyan
+    white                      = ColorT T.White
+    bright (ColorT T.Black  )  = ColorT T.BrightBlack
+    bright (ColorT T.Red    )  = ColorT T.BrightRed
+    bright (ColorT T.Green  )  = ColorT T.BrightGreen
+    bright (ColorT T.Yellow )  = ColorT T.BrightYellow
+    bright (ColorT T.Blue   )  = ColorT T.BrightBlue
+    bright (ColorT T.Magenta)  = ColorT T.BrightMagenta
+    bright (ColorT T.Cyan   )  = ColorT T.BrightCyan
+    bright (ColorT T.White  )  = ColorT T.BrightWhite
+    bright (ColorT c        )  = ColorT c
+    foreground (ColorT c)      = AttributeT (T.Foreground c)
+    background (ColorT c)      = AttributeT (T.Background c)
 
-instance (MonadIO m, MonadThrow m, Terminal t) => MonadColorPrinter (TerminalT t m) where
-    inverted   = A Inverted
-    foreground = A . Foreground
-    background = A . Background
+instance (MonadIO m, MonadThrow m, T.Terminal t) => MonadScreen (TerminalT t m) where
+    moveCursorUp                           = command . T.MoveCursorUp
+    moveCursorDown                         = command . T.MoveCursorDown
+    moveCursorLeft                         = command . T.MoveCursorLeft
+    moveCursorRight                        = command . T.MoveCursorRight
 
-instance (MonadIO m, MonadThrow m, Terminal t) => MonadTerminal (TerminalT t m) where
-    moveCursorUp                           = command . MoveCursorUp
-    moveCursorDown                         = command . MoveCursorDown
-    moveCursorLeft                         = command . MoveCursorLeft
-    moveCursorRight                        = command . MoveCursorRight
+    getCursorPosition = TerminalT (liftIO . T.termGetCursorPosition =<< ask)
+    setCursorPosition                      = command . T.SetCursorPosition
+    setCursorPositionVertical              = command . T.SetCursorPositionVertical
+    setCursorPositionHorizontal            = command . T.SetCursorPositionHorizontal
+    saveCursorPosition                     = command T.SaveCursorPosition
+    restoreCursorPosition                  = command T.RestoreCursorPosition
+    showCursor                             = command T.ShowCursor
+    hideCursor                             = command T.HideCursor
 
-    getCursorPosition = TerminalT (liftIO . termGetCursorPosition =<< ask)
-    setCursorPosition                      = command . SetCursorPosition
-    setCursorPositionVertical              = command . SetCursorPositionVertical
-    setCursorPositionHorizontal            = command . SetCursorPositionHorizontal
-    saveCursorPosition                     = command SaveCursorPosition
-    restoreCursorPosition                  = command RestoreCursorPosition
-    showCursor                             = command ShowCursor
-    hideCursor                             = command HideCursor
+    clearLine                              = command T.ClearLine
+    clearLineLeft                          = command T.ClearLineLeft
+    clearLineRight                         = command T.ClearLineRight
+    clearScreen                            = command T.ClearScreen
+    clearScreenAbove                       = command T.ClearScreenAbove
+    clearScreenBelow                       = command T.ClearScreenBelow
+    
+    useAlternateScreenBuffer               = command . T.UseAlternateScreenBuffer
+    
+    getScreenSize = TerminalT (liftIO . T.termGetScreenSize =<< ask)
 
-    clearLine                              = command ClearLine
-    clearLineLeft                          = command ClearLineLeft
-    clearLineRight                         = command ClearLineRight
-    clearScreen                            = command ClearScreen
-    clearScreenAbove                       = command ClearScreenAbove
-    clearScreenBelow                       = command ClearScreenBelow
-
-    getScreenSize     = TerminalT (liftIO . termGetScreenSize =<< ask)
-
-    useAlternateScreenBuffer               = command . UseAlternateScreenBuffer
+instance (MonadIO m, MonadThrow m, T.Terminal t) => MonadTerminal (TerminalT t m) where
 
 -- | See https://en.wikipedia.org/wiki/List_of_Unicode_characters
 safeChar :: Char -> Bool
@@ -174,7 +158,7 @@ safeChar c
   | c  < '\xa0' = False -- C1 up to start of Latin-1.
   | otherwise   = True
 
-command :: (MonadIO m, MonadThrow m, Terminal t) => Command -> TerminalT t m ()
+command :: (MonadIO m, MonadThrow m, T.Terminal t) => T.Command -> TerminalT t m ()
 command c = TerminalT do
   t <- ask
-  liftIO $ termCommand t c
+  liftIO $ T.termCommand t c

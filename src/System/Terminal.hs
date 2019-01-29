@@ -10,19 +10,20 @@ module System.Terminal
     -- * Printing & Screen Modification
     -- ** MonadPrinter
   , MonadPrinter (..)
-    -- ** MonadPrettyPrinter
-  , MonadPrettyPrinter (..)
-    -- ** MonadFormatPrinter
-  , MonadFormatPrinter (..)
-    -- ** MonadColorPrinter
+    -- *** MonadMarkupPrinter
+  , MonadMarkupPrinter (..)
+    -- *** MonadFormattingPrinter
+  , MonadFormattingPrinter (..)
+    -- *** MonadColorPrinter
   , MonadColorPrinter (..)
-  , dull
-  , bright
-  , BasicColor (..)
-  , Color (..)
-  , ColorMode (..)
+    -- *** Pretty Printing
+  , putDoc
+  , putDocLn
+  , putSimpleDocStream
+    -- ** MonadScreen
+  , MonadScreen (..)
     -- ** MonadTerminal
-  , MonadTerminal (..)
+  , MonadTerminal
   , withAlternateScreenBuffer
     -- * Event Processing
     -- *** waitEvent
@@ -72,6 +73,7 @@ import           System.Terminal.Decoder
 import           System.Terminal.Encoder
 import           System.Terminal.MonadInput
 import           System.Terminal.MonadPrinter
+import           System.Terminal.MonadScreen
 import           System.Terminal.MonadTerminal
 import           System.Terminal.Terminal
 import           System.Terminal.TerminalT

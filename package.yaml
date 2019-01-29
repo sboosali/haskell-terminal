@@ -54,6 +54,7 @@ internal-libraries:
       - System.Terminal.Encoder
       - System.Terminal.MonadInput
       - System.Terminal.MonadPrinter
+      - System.Terminal.MonadScreen
       - System.Terminal.MonadTerminal
       - System.Terminal.Terminal
       - System.Terminal.TerminalT

@@ -1,7 +1,8 @@
-{-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE TypeFamilies     #-}
+{-# LANGUAGE FlexibleContexts #-}
 module System.Terminal.MonadPrinter where
 
-import           Data.Text
+import           Data.Text                     as T
 import           Data.Text.Prettyprint.Doc
 
 import           Prelude                   hiding (putChar)
@@ -32,166 +33,204 @@ import           Prelude                   hiding (putChar)
 --      security risk as modern terminals are highly programmable and should
 --      not be fed with untrusted input.
 class Monad m => MonadPrinter m where
-  -- | Move the carriage to the beginning of the next line.
-  putLn              :: m ()
-  putLn               = putChar '\n'
-  -- | Print a single printable character or one of the allowed control characters.
-  putChar            :: Char -> m ()
-  -- | Print a `String`.
-  putString          :: String -> m ()
-  putString           = mapM_ putChar
-  -- | Print a `String` and an additional newline.
-  putStringLn        :: String -> m ()
-  putStringLn s       = putString s >> putLn
-  -- | Print a `Text`.
-  putText            :: Text -> m ()
-  putText             = putString . Data.Text.unpack
-  -- | Print a `Text` and an additional newline.
-  putTextLn          :: Text -> m ()
-  putTextLn           = putStringLn . Data.Text.unpack
-  -- | Flush the output buffer and make the all previous output actually
-  --   visible after a reasonably short amount of time.
-  --
-  --    * The operation may return before the buffer has actually been flushed.
-  flush              :: m ()
-  flush               = pure ()
-  -- | Get the current line width.
-  --
-  --    * The operation may return the last known line width and may not be
-  --      completely precise when I/O is asynchronous.
-  --    * This operations shall not block too long and rather be called more
-  --      often in order to adapt to changes in line width.
-  getLineWidth       :: m Int
-  {-# MINIMAL putChar, getLineWidth #-}
+    -- | Move the carriage to the beginning of the next line.
+    putLn              :: m ()
+    putLn               = putChar '\n'
+    -- | Print a single printable character or one of the allowed control characters.
+    putChar            :: Char -> m ()
+    -- | Print a `String`.
+    putString          :: String -> m ()
+    putString           = mapM_ putChar
+    -- | Print a `String` and an additional newline.
+    putStringLn        :: String -> m ()
+    putStringLn s       = putString s >> putLn
+    -- | Print a `Text`.
+    putText            :: Text -> m ()
+    putText             = putString . T.unpack
+    -- | Print a `Text` and an additional newline.
+    putTextLn          :: Text -> m ()
+    putTextLn           = putStringLn . T.unpack
+    -- | Flush the output buffer and make the all previous output actually
+    --   visible after a reasonably short amount of time.
+    --
+    --    * The operation may return before the buffer has actually been flushed.
+    flush              :: m ()
+    flush               = pure ()
+    -- | Get the current line width.
+    --
+    --    * The operation may return the last known line width and may not be
+    --      completely precise when I/O is asynchronous.
+    --    * This operations shall not block too long and rather be called more
+    --      often in order to adapt to changes in line width.
+    getLineWidth       :: m Int
+    {-# MINIMAL putChar, getLineWidth #-}
 
--- | This class is the foundation for all environments that allow
---   annotated text and `Doc`uments to be printed to.
---
---    * Prefer using the `Data.Text.Prettyprint.Doc` module and the
---      `putDoc` operation whenever trying to print structured or
---      formatted text as it automatically deals with nested annotations
---      and the current line width.
-class MonadPrinter m => MonadPrettyPrinter m where
-  -- | This associated type represents all possible annotations that are available
-  --   in the current environment.
-  --
-  --   When writing polymorphic code against these monadic interfaces
-  --   the concrete instantiation of this type is usually unknown and class
-  --   instances are generally advised to not expose value constructors for
-  --   this type.
-  --
-  --   Instead, subclasses like `MonadFormatPrinter` and `MonadColorPrinter`
-  --   offer abstract value constructors like `bold`, `underlined`, `inverted`
-  --   which are then given meaning by the concrete class instance. The
-  --   environment `System.Terminal.Ansi.AnsiTerminalT` for example
-  --   implements all of these classes.
-  data Annotation m
-  -- | Print an annotated `Doc`.
-  --
-  --   * This operation performs `resetAnnotations` on entry and on exit.
-  --   * This operation can deal with nested annotations (see example).
-  --
-  -- Example:
-  --
-  -- @
-  -- {-# LANGUAGE OverloadedStrings #-}
-  -- import System.Terminal
-  -- import Data.Text.Prettyprint.Doc
-  --
-  -- printer :: (`MonadFormatPrinter` m, `MonadColorPrinter` m) => m ()
-  -- printer = `putDoc` $ `annotate` (foreground $ `bright` `Blue`) "This is blue!" <> `line`
-  --                 <> `annotate` `bold` ("Just bold!" <> otherDoc <> "..just bold again")
-  --
-  -- otherDoc :: (`MonadColorPrinter` m, `Annotation` m ~ ann) => `Doc` ann
-  -- otherDoc = `annotate` (`background` $ `dull` `Red`) " BOLD ON RED BACKGROUND "
-  -- @
-  --
-  -- Note the necessary unification of `Annotation` `m` and `ann` in the definition of `otherDoc`!
-  putDoc           :: Doc (Annotation m) -> m ()
-  -- | Like `putDoc` but adds an additional newline.
-  putDocLn         :: Doc (Annotation m) -> m ()
-  putDocLn doc      = putDoc doc >> putLn
-  -- | Set an annotation so that it affects subsequent output.
-  setAnnotation    :: Annotation m -> m ()
-  setAnnotation _   = pure ()
-  -- | Reset an annotation so that it does no longer affect subsequent output.
-  --
-  -- * Binary attributes like `bold` or `underlined` shall just be reset to their opposite.
-  --
-  -- * For non-binary attributes like colors all of their possible values shall be treated
-  --   as equal, so that
-  --
-  --   @
-  --   `setAnnotation` (`foreground` $ `bright` `Blue`) >> `resetAnnotation` (`foreground` $ `dull` `Red`)
-  --   @
-  --
-  --   results in the foreground color attribute reset afterwards whereas after
-  --
-  --   @
-  --   `setAnnotation` (`foreground` $ `bright` `Blue`) >> `resetAnnotation` (`background` $ `dull` `Red`)
-  --   @
-  --
-  --   the foreground color is still set as `bright` `Blue`.
-  --
-  resetAnnotation  :: Annotation m -> m ()
-  resetAnnotation _ = pure ()
-  -- | Reset all annotations to their default.
-  resetAnnotations :: m ()
-  resetAnnotations  = pure ()
-  {-# MINIMAL putDoc, setAnnotation, resetAnnotation, resetAnnotations #-}
+-- | This class introduces abstract constructors for text markup.
+class MonadPrinter m => MonadMarkupPrinter m where
+    -- | This associated type represents all possible attributes that are
+    --   available in the current environment.
+    --
+    --   When writing polymorphic code against these monadic interfaces
+    --   the concrete instantiation of this type is usually unknown and class
+    --   instances are generally advised to not expose value constructors for
+    --   this type.
+    --
+    --   Instead, subclasses like `MonadFormatPrinter` and `MonadColorPrinter`
+    --   offer abstract value constructors like `bold`, `underlined`, `inverted`
+    --   which are then given meaning by the concrete class instance. The
+    --   environment `System.Terminal.Ansi.AnsiTerminalT` for example
+    --   implements all of these classes.
+    data Attribute m
+    setAttribute :: Attribute m -> m ()
+    setAttribute _ = pure ()
+    -- | Reset an attribute so that it does no longer affect subsequent output.
+    --
+    -- * Binary attributes like `bold` or `underlined` shall just be reset to their opposite.
+    --
+    -- * For non-binary attributes like colors all of their possible values shall be treated
+    --   as equal, so that
+    --
+    --   @
+    --   `setAttribute` (`foreground` $ `bright` `Blue`) >> `resetAttribute` (`foreground` $ `dull` `Red`)
+    --   @
+    --
+    --   results in the foreground color attribute reset afterwards whereas after
+    --
+    --   @
+    --   `setAttribute` (`foreground` $ `bright` `Blue`) >> `resetAttribute` (`background` $ `dull` `Red`)
+    --   @
+    --
+    --   the foreground color is still set as `bright` `Blue`.
+    --
+    resetAttribute  :: Attribute m -> m ()
+    -- | Reset all attributes to their default.
+    resetAttributes :: m ()
+    -- | Shall determine wheter two attribute values would override each other
+    --   or can be applied independently.
+    --
+    -- * Shall obey the laws of equivalence.
+    resetsAttribute :: Attribute m -> Attribute m -> Bool
 
--- | This class offers abstract constructors for text formatting
---   annotations.
-class MonadPrettyPrinter m => MonadFormatPrinter m where
-  -- | This annotation makes text appear __bold__.
-  bold            :: Annotation m
-  -- | This annotation makes text appear /italic/.
-  italic          :: Annotation m
-  -- | This annotation makes text appear underlined.
-  underlined      :: Annotation m
+class MonadMarkupPrinter m => MonadFormattingPrinter m where
+    -- | This attribute makes text appear __bold__.
+    bold            :: Attribute m
+    -- | This attribute makes text appear /italic/.
+    italic          :: Attribute m
+    -- | This attribute makes text appear underlined.
+    underlined      :: Attribute m
+    -- | This attribute swaps foreground and background (color).
+    --
+    --   * This operation is idempotent: Applying the attribute a second time
+    --     won't swap it back. Use `resetAttribute` instead.
+    inverted        :: Attribute m
 
 -- | This class offers abstract value constructors for
 --   foreground and background coloring.
-class MonadPrettyPrinter m => MonadColorPrinter m where
-  -- | This annotation swaps foreground and background color.
-  --
-  --   * This operation is idempotent: Applying the annotation a second time
-  --     won't swap it back. Use `resetAnnotation` instead.
-  inverted        :: Annotation m
-  -- | This annotation sets the __foreground__ color (the text color).
-  foreground      :: Color -> Annotation m
-  -- | This annotation sets the __background__ color.
-  background      :: Color -> Annotation m
+class MonadMarkupPrinter m => MonadColorPrinter m where
+    data Color m
 
-data SimpleAnnotation
-  = Bold
-  | Italic
-  | Underlined
-  | Inverted
-  | Foreground Color
-  | Background Color deriving (Eq, Ord, Show)
+    black      :: Color m
+    red        :: Color m
+    green      :: Color m
+    yellow     :: Color m
+    blue       :: Color m
+    magenta    :: Color m
+    cyan       :: Color m
+    white      :: Color m
 
-data Color = Color ColorMode BasicColor
-  deriving (Eq, Ord, Show)
+    bright     :: Color m -> Color m
 
-data ColorMode
-  = Dull
-  | Bright
-  deriving (Eq, Ord, Show)
+    -- | This attribute sets the __foreground__ color (the text color).
+    foreground :: Color m -> Attribute m
+    -- | This attribute sets the __background__ color.
+    background :: Color m -> Attribute m
 
-data BasicColor
-  = Black
-  | Red
-  | Green
-  | Yellow
-  | Blue
-  | Magenta
-  | Cyan
-  | White
-  deriving (Eq, Ord, Show)
+-- | Print an annotated `Doc`.
+--
+--   * This operation performs `resetAttributes` on entry and on exit.
+--   * This operation can deal with nested attributes (see example).
+--
+-- Example:
+--
+-- @
+-- {-# LANGUAGE OverloadedStrings #-}
+-- import System.Terminal
+-- import Data.Text.Prettyprint.Doc
+--
+-- printer :: (`MonadFormatPrinter` m, `MonadColorPrinter` m) => m ()
+-- printer = `putDoc` $ `annotate` (foreground $ `bright` `Blue`) "This is blue!" <> `line`
+--                 <> `annotate` `bold` ("Just bold!" <> otherDoc <> "..just bold again")
+--
+-- otherDoc :: (`MonadColorPrinter` m, `Attribute` m ~ ann) => `Doc` ann
+-- otherDoc = `annotate` (`background` $ `dull` `Red`) " BOLD ON RED BACKGROUND "
+-- @
+--
+-- Note the necessary unification of `Attribute` `m` and `ann` in the definition of `otherDoc`!
+putDoc :: (MonadMarkupPrinter m) => Doc (Attribute m) -> m ()
+putDoc doc = do
+    w <- getLineWidth
+    putSimpleDocStream (sdoc w)
+    where
+        options w = defaultLayoutOptions { layoutPageWidth = AvailablePerLine w 1.0 }
+        sdoc w    = layoutSmart (options w) doc
 
-dull :: BasicColor -> Color
-dull = Color Dull
+-- | Like `putDoc` but adds an additional newline.
+putDocLn :: (MonadMarkupPrinter m) => Doc (Attribute m) -> m ()
+putDocLn doc = putDoc doc >> putLn
 
-bright :: BasicColor -> Color
-bright = Color Bright
+-- | FIXME: documentation
+putSimpleDocStream :: (MonadMarkupPrinter m) => SimpleDocStream (Attribute m) -> m ()
+putSimpleDocStream sdoc = do
+    resetAttributes
+    f [] sdoc
+    where
+        f _       SFail          = pure ()
+        f _       SEmpty         = pure ()
+        f    aa  (SChar c    xx) = putChar c                             >> f    aa  xx
+        f    aa  (SText _ t  xx) = putText t                             >> f    aa  xx
+        f    aa  (SLine i    xx) = putLn >> putText (T.replicate i " ")  >> f    aa  xx
+        f    aa  (SAnnPush a xx) = setAttribute a                        >> f (a:aa) xx
+        f (a:aa) (SAnnPop    xx) = case Prelude.filter (resetsAttribute a) aa of
+            []    -> resetAttribute a >> f aa xx
+            (e:_) -> setAttribute   e >> f aa xx
+
+{-
+putSimpleDocStream sdoc = do
+    resetAttributes
+    render [] sdoc
+    resetAttributes
+    where
+        oldFG []                   = Nothing
+        oldFG (A (Foreground c):_) = Just c
+        oldFG (_:xs)               = oldFG xs
+        oldBG []                   = Nothing
+        oldBG (A (Background c):_) = Just c
+        oldBG (_:xs)               = oldBG xs
+        render anns = \case
+            PP.SFail           -> pure ()
+            PP.SEmpty          -> pure ()
+            PP.SChar c ss      -> putChar c >> render anns ss
+            PP.SText _ t ss    -> putText t >> render anns ss
+            PP.SLine n ss      -> putLn >> putText (Text.replicate n " ") >> render anns ss
+            PP.SAnnPush ann ss -> setAttribute ann >> render (ann:anns) ss
+            PP.SAnnPop ss      -> case anns of
+                []                     -> render [] ss
+                (A Bold         :anns')
+                    | A Bold       `elem` anns' -> pure () -- FIXME: why?
+                    | otherwise                 -> resetAttribute (A Bold)       >> render anns' ss
+                (A Italic       :anns')
+                    | A Italic     `elem` anns' -> pure ()
+                    | otherwise                 -> resetAttribute (A Italic)     >> render anns' ss
+                (A Underlined   :anns')
+                    | A Underlined `elem` anns' -> pure ()
+                    | otherwise                 -> resetAttribute (A Underlined) >> render anns' ss
+                (A Inverted     :anns')
+                    | A Inverted   `elem` anns' -> pure ()
+                    | otherwise                 -> resetAttribute (A Inverted)   >> render anns' ss
+                (A (Foreground c) :anns') -> case oldFG anns' of
+                    Just d  -> setAttribute   (A (Foreground d)) >> render anns' ss
+                    Nothing -> resetAttribute (A (Foreground c)) >> render anns' ss
+                (A (Background c) :anns') -> case oldBG anns' of
+                    Just d  -> setAttribute   (A (Background d)) >> render anns' ss
+                    Nothing -> resetAttribute (A (Background c)) >> render anns' ss
+-}

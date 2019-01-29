@@ -14,17 +14,17 @@ import           Prelude                   hiding ((<>))
 main :: IO ()
 main = withTerminal $ runTerminalT printer
 
-printer :: (MonadFormatPrinter m, MonadColorPrinter m) => m ()
+printer :: (MonadFormattingPrinter m, MonadColorPrinter m) => m ()
 printer = do
     lw <- getLineWidth
     putDoc $ mconcat
         [ pretty $ "The line width is " ++ show lw ++ " columns."
         , hardline 
-        , annotate (foreground $ bright Blue) "This is blue!"
+        , annotate (foreground $ bright blue) "This is blue!"
         , hardline
-        , annotate bold ("Just bold!" <+> annotate (background $ dull Red) "BOLD ON RED BACKGROUND" <+> "..just bold again")
+        , annotate bold ("Just bold!" <+> annotate (background red) "BOLD ON RED BACKGROUND" <+> "..just bold again")
         , hardline
-        , annotate (foreground $ bright Red) "Hallo Welt!"
+        , annotate (foreground $ bright red) "Hallo Welt!"
         , hardline
         , hang 10 $ "ssdfhsjdfhksjdhfkjsdhfks" <+> "hdfjkshdfkjshddh" <+> "fjksdhfkshdfkjshdfjks"
                   <+> "hdfkjshdfjhskdjfhsjksdhfjshdfjshdkj" <+> "fhsdkjfhskjdfhjksdhfjksdhfjks"
@@ -34,7 +34,7 @@ printer = do
                   <+> "\x1d11e"
         , line
         , line
-        , annotate (background $ dull Blue) "FOOBAR"
+        , annotate (background blue) "FOOBAR"
         , hardline
         ]
     flush
