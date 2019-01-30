@@ -10,8 +10,8 @@ import           Data.List
 
 type Row     = Int
 type Rows    = Int
-type Column  = Int
-type Columns = Int
+type Col  = Int
+type Cols = Int
 
 -- | This monad describes an environment that maintains a stream of `Event`s
 --   and offers out-of-band signaling for interrupts.
@@ -165,11 +165,11 @@ altKey   = Modifiers 4
 metaKey  = Modifiers 8
 
 data MouseEvent
-  = MouseMoved          (Int,Int)
-  | MouseButtonPressed  (Int,Int) MouseButton
-  | MouseButtonReleased (Int,Int) MouseButton
-  | MouseButtonClicked  (Int,Int) MouseButton
-  | MouseWheeled        (Int,Int) Direction
+  = MouseMoved          (Row,Col)
+  | MouseButtonPressed  (Row,Col) MouseButton
+  | MouseButtonReleased (Row,Col) MouseButton
+  | MouseButtonClicked  (Row,Col) MouseButton
+  | MouseWheeled        (Row,Col) Direction
   deriving (Eq,Ord,Show)
 
 data MouseButton
@@ -188,12 +188,12 @@ data Direction
 data WindowEvent
   = WindowLostFocus
   | WindowGainedFocus
-  | WindowSizeChanged (Int,Int)
+  | WindowSizeChanged (Rows, Cols)
   deriving (Eq, Ord, Show)
 
 data DeviceEvent
   = DeviceAttributesReport String
-  | CursorPositionReport (Row, Column)
+  | CursorPositionReport (Row, Col)
   deriving (Eq, Ord, Show)
 
 data Signal

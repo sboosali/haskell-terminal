@@ -13,6 +13,7 @@ import           Control.Monad.IO.Class
 import           Control.Monad.STM
 import           Control.Monad.Trans.Class
 import           Control.Monad.Trans.Reader
+import           Control.Monad.Trans.State
 import           Data.Foldable                      (forM_)
 import qualified Data.Text                       as Text
 import qualified Data.Text.Prettyprint.Doc       as PP
@@ -46,20 +47,26 @@ import qualified System.Terminal.Terminal        as T
 --     `flush`
 -- @
 newtype TerminalT t m a
-    = TerminalT (ReaderT t m a)
+    = TerminalT (StateT ScreenStateEstimation (ReaderT t m) a)
     deriving (Functor, Applicative, Monad, MonadIO, MonadThrow, MonadCatch, MonadMask)
 
 -- | Run a `TerminalT` application on the given terminal.
 runTerminalT :: (MonadIO m, MonadMask m, T.Terminal t) => TerminalT t m a -> t -> m a
-runTerminalT (TerminalT action) t = runReaderT action t
+runTerminalT (TerminalT action) t = runReaderT (evalStateT action sseDefault) t
 
 instance MonadTrans (TerminalT t) where
-    lift = TerminalT . lift
+    lift = TerminalT . lift . lift
 
 instance (MonadIO m, T.Terminal t) => MonadInput (TerminalT t m) where
-    waitInterruptOrEvent f = TerminalT do
-        t <- ask
-        liftIO $ atomically $ f (T.termInterrupt t) (T.termEvent t)
+    waitInterruptOrEvent f = do
+        TerminalT do
+            t <- lift ask
+            liftIO $ atomically $ f (T.termInterrupt t) (T.termEvent t)
+        {-case ev of
+            WindowEvent (WindowSizeChanged {})     -> sseSetUnreliable
+            DeviceEvent (CursorPositionReport pos) -> sseSetCursorPosition pos
+            _                                      -> pure ()
+        pure ev -}
 
 instance (MonadIO m, MonadThrow m, T.Terminal t) => MonadPrinter (TerminalT t m) where
     putChar c =
@@ -73,10 +80,10 @@ instance (MonadIO m, MonadThrow m, T.Terminal t) => MonadPrinter (TerminalT t m)
             | otherwise    = let (t1,t2) = Text.splitAt 80 t0
                              in  command (T.PutText t1) >> loop t2
     flush = TerminalT do
-        t <- ask
-        liftIO  $ T.termFlush t
+        t <- lift ask
+        liftIO $ T.termFlush t
     getLineWidth = TerminalT do
-        t <- ask
+        t <- lift ask
         liftIO (snd <$> T.termGetScreenSize t)
 
 instance (MonadIO m, MonadThrow m, T.Terminal t) => MonadMarkupPrinter (TerminalT t m) where
@@ -126,7 +133,6 @@ instance (MonadIO m, MonadThrow m, T.Terminal t) => MonadScreen (TerminalT t m) 
     moveCursorLeft                         = command . T.MoveCursorLeft
     moveCursorRight                        = command . T.MoveCursorRight
 
-    getCursorPosition = TerminalT (liftIO . T.termGetCursorPosition =<< ask)
     setCursorPosition                      = command . T.SetCursorPosition
     setCursorPositionVertical              = command . T.SetCursorPositionVertical
     setCursorPositionHorizontal            = command . T.SetCursorPositionHorizontal
@@ -141,10 +147,16 @@ instance (MonadIO m, MonadThrow m, T.Terminal t) => MonadScreen (TerminalT t m) 
     clearScreen                            = command T.ClearScreen
     clearScreenAbove                       = command T.ClearScreenAbove
     clearScreenBelow                       = command T.ClearScreenBelow
-    
+
     useAlternateScreenBuffer               = command . T.UseAlternateScreenBuffer
-    
-    getScreenSize = TerminalT (liftIO . T.termGetScreenSize =<< ask)
+
+    getScreenSize = TerminalT do
+        t <- lift ask
+        liftIO (T.termGetScreenSize t)
+
+    getCursorPosition = TerminalT do
+        t <- lift ask
+        liftIO (T.termGetCursorPosition t)
 
 instance (MonadIO m, MonadThrow m, T.Terminal t) => MonadTerminal (TerminalT t m) where
 
@@ -160,5 +172,27 @@ safeChar c
 
 command :: (MonadIO m, MonadThrow m, T.Terminal t) => T.Command -> TerminalT t m ()
 command c = TerminalT do
-  t <- ask
+  t <- lift ask
   liftIO $ T.termCommand t c
+
+---------------------------------------------------------------------------------------------------
+-- SCREEN STATE ESTIMATION
+---------------------------------------------------------------------------------------------------
+
+data ScreenStateEstimation
+  = ScreenStateEstimation
+  { sseWidth     :: {-# UNPACK #-} !Rows
+  , sseHeight    :: {-# UNPACK #-} !Cols
+  , sseCursorRow :: {-# UNPACK #-} !Row
+  , sseCursorCol :: {-# UNPACK #-} !Col
+  , sseReliable  :: {-# UNPACK #-} !Bool
+  }
+
+sseDefault :: ScreenStateEstimation
+sseDefault = ScreenStateEstimation 0 0 0 0 False
+
+sseSetUnreliable :: (Monad m) => m ()
+sseSetUnreliable = pure ()
+
+sseSetCursorPosition :: (Monad m) => (Row, Col) -> m ()
+sseSetCursorPosition pos = pure ()

@@ -42,8 +42,8 @@ data LocalTerminal
     { localType              :: BS.ByteString
     , localEvent             :: STM Event
     , localInterrupt         :: STM ()
-    , localGetScreenSize     :: IO (Rows, Columns)
-    , localGetCursorPosition :: IO (Row, Column)
+    , localGetScreenSize     :: IO (Rows, Cols)
+    , localGetCursorPosition :: IO (Row, Col)
     }
 
 instance Terminal LocalTerminal where
@@ -122,7 +122,7 @@ withResizeHandler handler = bracket installHandler restoreHandler . const
       pure ()
 
 withInputProcessing :: (MonadIO m, MonadMask m) =>
-    ThreadId -> Termios -> TMVar (Row, Column) -> TVar Bool -> TChan Event -> m a -> m a
+    ThreadId -> Termios -> TMVar (Row, Col) -> TVar Bool -> TChan Event -> m a -> m a
 withInputProcessing mainThread termios cursorPosition interrupt events =
     bracket (liftIO $ A.async $ run decoder) (liftIO . A.cancel) . const
     where

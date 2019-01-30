@@ -11,17 +11,17 @@ class MonadScreen m where
   -- | Move the cursor `n` lines down. Do not change column.
   moveCursorDown              :: Rows -> m ()
   -- | Move the cursor `n` columns to the left. Do not change line.
-  moveCursorLeft              :: Columns -> m ()
+  moveCursorLeft              :: Cols -> m ()
   -- | Move the cursor `n` columns to the right. Do not change line.
-  moveCursorRight             :: Columns -> m ()
+  moveCursorRight             :: Cols -> m ()
   -- | Get the current cursor position. `(0,0) is the upper left of the screen.
-  getCursorPosition           :: m (Row, Column)
+  getCursorPosition           :: m (Row, Col)
   -- | Set the cursor position. `(0,0)` is the upper left of the screen.
-  setCursorPosition           :: (Row, Column) -> m ()
+  setCursorPosition           :: (Row, Col) -> m ()
   -- | Set the vertical cursor position to the `n`th line. Do not change column.
   setCursorPositionVertical   :: Row -> m ()
   -- | Set the horizontal cursor position to the `n`th column. Do not change line.
-  setCursorPositionHorizontal :: Column -> m ()
+  setCursorPositionHorizontal :: Col -> m ()
   -- | Save the current cursor position to be restored later by `restoreCursorPosition`.
   saveCursorPosition          :: m ()
   -- | Restore cursor to position previously saved by `saveCursorPosition`.
@@ -44,7 +44,7 @@ class MonadScreen m where
   -- | Clear the screen below the cursor.
   clearScreenBelow            :: m ()
 
-  getScreenSize               :: m (Rows, Columns)
+  getScreenSize               :: m (Rows, Cols)
   -- | Whether or not to use the alternate screen buffer.
   --
   --   - The main screen buffer content is preserved and restored

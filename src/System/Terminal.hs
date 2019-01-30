@@ -59,7 +59,7 @@ module System.Terminal
   , Terminal (..)
   , System.Terminal.Platform.LocalTerminal ()
     -- ** Misc
-  , Row, Rows, Column, Columns
+  , Row, Rows, Col, Cols
   , Command (..)
   , Decoder (..)
   , ansiDecoder

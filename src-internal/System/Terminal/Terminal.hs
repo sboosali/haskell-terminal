@@ -46,11 +46,11 @@ class Terminal t where
   -- | This operation shall return the latest known screen size without
   --   blocking. The first parameter denotes the number of rows and the
   --   one the number of columns.
-  termGetScreenSize     :: t -> IO (Rows, Columns)
+  termGetScreenSize     :: t -> IO (Rows, Cols)
   -- | This operation shall return the current cursor position.
   --   It may block as depending on implementation it usually requires an
   --   in-band roundtrip to the terminal. Use it wisely.
-  termGetCursorPosition :: t -> IO (Row, Column)
+  termGetCursorPosition :: t -> IO (Row, Col)
 
 -- | The commands every terminal needs to understand.
 --
@@ -67,9 +67,9 @@ data Command
   | MoveCursorLeft Int
   | MoveCursorRight Int
   | GetCursorPosition
-  | SetCursorPosition (Row, Column)
+  | SetCursorPosition (Row, Col)
   | SetCursorPositionVertical Row
-  | SetCursorPositionHorizontal Column
+  | SetCursorPositionHorizontal Col
   | SaveCursorPosition
   | RestoreCursorPosition
   | ShowCursor
