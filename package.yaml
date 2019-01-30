@@ -37,6 +37,7 @@ default-extensions:
 - BlockArguments
 - OverloadedStrings
 - GeneralizedNewtypeDeriving
+- TupleSections
 
 library:
   ghc-options: -Wall -fwarn-incomplete-patterns

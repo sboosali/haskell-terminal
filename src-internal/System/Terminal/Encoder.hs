@@ -6,6 +6,7 @@ import           System.Terminal.Terminal
 
 ansiEncode :: Command -> Text
 ansiEncode = \case
+    PutLn                                    -> "\n"
     PutText t                                -> t
     SetAttribute Bold                        -> "\ESC[1m"
     SetAttribute Italic                      -> ""
@@ -50,6 +51,10 @@ ansiEncode = \case
     ResetAttribute (Foreground _)            -> "\ESC[39m"
     ResetAttribute (Background _)            -> "\ESC[49m"
     ResetAttributes                          -> "\ESC[m"
+    ShowCursor                               -> "\ESC[?25h"
+    HideCursor                               -> "\ESC[?25l"
+    SaveCursor                               -> "\ESC7"
+    RestoreCursor                            -> "\ESC8"
     MoveCursorUp i                           -> "\ESC[" <> pack (show i) <> "A"
     MoveCursorDown i                         -> "\ESC[" <> pack (show i) <> "B"
     MoveCursorLeft i                         -> "\ESC[" <> pack (show i) <> "D"
@@ -58,15 +63,13 @@ ansiEncode = \case
     SetCursorPosition (x,y)                  -> "\ESC[" <> pack (show $ x + 1) <> ";" <> pack (show $ y + 1) <> "H"
     SetCursorPositionVertical i              -> "\ESC[" <> pack (show $ i + 1) <> "d"
     SetCursorPositionHorizontal i            -> "\ESC[" <> pack (show $ i + 1) <> "G"
-    SaveCursorPosition                       -> "\ESC7"
-    RestoreCursorPosition                    -> "\ESC8"
-    ShowCursor                               -> "\ESC[?25h"
-    HideCursor                               -> "\ESC[?25l"
     ClearLine                                -> "\ESC[2K"
     ClearLineLeft                            -> "\ESC[1K"
     ClearLineRight                           -> "\ESC[0K"
     ClearScreen                              -> "\ESC[2J"
     ClearScreenAbove                         -> "\ESC[1J"
     ClearScreenBelow                         -> "\ESC[0J"
-    UseAlternateScreenBuffer   True          -> "\ESC[?1049h"
-    UseAlternateScreenBuffer  False          -> "\ESC[?1049l"
+    UseAutoWrap True                         -> "\ESC[?7h"
+    UseAutoWrap False                        -> "\ESC[?7l"
+    UseAlternateScreenBuffer True            -> "\ESC[?1049h"
+    UseAlternateScreenBuffer False           -> "\ESC[?1049l"

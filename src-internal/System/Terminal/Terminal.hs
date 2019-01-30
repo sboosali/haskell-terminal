@@ -58,7 +58,8 @@ class Terminal t where
 -- that all terminals understand. Otherwise portability will
 -- be lost.
 data Command
-  = PutText Text
+  = PutLn
+  | PutText Text
   | SetAttribute Attribute
   | ResetAttribute Attribute
   | ResetAttributes
@@ -66,20 +67,21 @@ data Command
   | MoveCursorDown Int
   | MoveCursorLeft Int
   | MoveCursorRight Int
+  | ShowCursor
+  | HideCursor
+  | SaveCursor
+  | RestoreCursor
+  | SetCursorPositionHorizontal Col
   | GetCursorPosition
   | SetCursorPosition (Row, Col)
   | SetCursorPositionVertical Row
-  | SetCursorPositionHorizontal Col
-  | SaveCursorPosition
-  | RestoreCursorPosition
-  | ShowCursor
-  | HideCursor
   | ClearLine
   | ClearLineLeft
   | ClearLineRight
   | ClearScreen
   | ClearScreenAbove
   | ClearScreenBelow
+  | UseAutoWrap Bool
   | UseAlternateScreenBuffer Bool
   deriving (Eq, Ord, Show)
 

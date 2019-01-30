@@ -7,6 +7,7 @@ module System.Terminal.TerminalT
 where
 
 import           Control.Applicative                ((<|>))
+import           Control.Concurrent.STM.TVar
 import           Control.Monad                      (when)
 import           Control.Monad.Catch
 import           Control.Monad.IO.Class
@@ -47,33 +48,40 @@ import qualified System.Terminal.Terminal        as T
 --     `flush`
 -- @
 newtype TerminalT t m a
-    = TerminalT (StateT ScreenStateEstimation (ReaderT t m) a)
+    = TerminalT (StateT ScreenState (ReaderT t m) a)
     deriving (Functor, Applicative, Monad, MonadIO, MonadThrow, MonadCatch, MonadMask)
 
 -- | Run a `TerminalT` application on the given terminal.
 runTerminalT :: (MonadIO m, MonadMask m, T.Terminal t) => TerminalT t m a -> t -> m a
-runTerminalT (TerminalT action) t = runReaderT (evalStateT action sseDefault) t
+runTerminalT ma t = runReaderT (evalStateT action sseDefault) t
+    where
+        TerminalT action = bracket_ before after ma
+        before = do
+            command (T.UseAutoWrap False)
+        after = do
+            command (T.UseAutoWrap True)
 
 instance MonadTrans (TerminalT t) where
     lift = TerminalT . lift . lift
 
 instance (MonadIO m, T.Terminal t) => MonadInput (TerminalT t m) where
-    waitInterruptOrEvent f = do
-        TerminalT do
-            t <- lift ask
-            liftIO $ atomically $ f (T.termInterrupt t) (T.termEvent t)
-        {-case ev of
-            WindowEvent (WindowSizeChanged {})     -> sseSetUnreliable
-            DeviceEvent (CursorPositionReport pos) -> sseSetCursorPosition pos
-            _                                      -> pure ()
-        pure ev -}
+    waitInterruptOrEvent f = TerminalT do
+        t <- lift ask
+        liftIO $ atomically $ f (T.termInterrupt t) (T.termEvent t)
 
 instance (MonadIO m, MonadThrow m, T.Terminal t) => MonadPrinter (TerminalT t m) where
-    putChar c =
-        command $ T.PutText $ Text.singleton c
-    putString cs = forM_ (filter safeChar cs) $ \c->
-        command $ T.PutText $ Text.singleton c
-    putText t = loop (Text.filter safeChar t)
+    putLn = do
+        command T.PutLn
+        sseLn
+    putChar c = do
+        command (T.PutText $ Text.singleton $ sanitizeChar c)
+        ssePut 1
+    putString cs = do
+        forM_ cs (command . T.PutText . Text.singleton . sanitizeChar)
+        ssePut (length cs)
+    putText t = do
+        loop (sanitizeText t)
+        ssePut (Text.length t)
         where
         loop t0
             | Text.null t0 = pure ()
@@ -128,47 +136,81 @@ instance (MonadIO m, MonadThrow m, T.Terminal t) => MonadColorPrinter (TerminalT
     background (ColorT c)      = AttributeT (T.Background c)
 
 instance (MonadIO m, MonadThrow m, T.Terminal t) => MonadScreen (TerminalT t m) where
-    moveCursorUp                           = command . T.MoveCursorUp
-    moveCursorDown                         = command . T.MoveCursorDown
-    moveCursorLeft                         = command . T.MoveCursorLeft
-    moveCursorRight                        = command . T.MoveCursorRight
+    showCursor               = command T.ShowCursor
+    hideCursor               = command T.HideCursor
 
-    setCursorPosition                      = command . T.SetCursorPosition
-    setCursorPositionVertical              = command . T.SetCursorPositionVertical
-    setCursorPositionHorizontal            = command . T.SetCursorPositionHorizontal
-    saveCursorPosition                     = command T.SaveCursorPosition
-    restoreCursorPosition                  = command T.RestoreCursorPosition
-    showCursor                             = command T.ShowCursor
-    hideCursor                             = command T.HideCursor
+    saveCursor = do
+        command T.SaveCursor
+        sseSaveCursorPosition
+    restoreCursor = do
+        command T.RestoreCursor
+        sseRestoreCursorPosition
 
-    clearLine                              = command T.ClearLine
-    clearLineLeft                          = command T.ClearLineLeft
-    clearLineRight                         = command T.ClearLineRight
-    clearScreen                            = command T.ClearScreen
-    clearScreenAbove                       = command T.ClearScreenAbove
-    clearScreenBelow                       = command T.ClearScreenBelow
+    moveCursorUp i
+        | i > 0     = command (T.MoveCursorUp i) >> sseMoveUp i
+        | i < 0     = moveCursorDown i
+        | otherwise = pure ()
+    moveCursorDown i
+        | i > 0     = command (T.MoveCursorDown i) >> sseMoveDown i
+        | i < 0     = moveCursorUp i
+        | otherwise = pure ()
+    moveCursorLeft i
+        | i > 0     = command (T.MoveCursorLeft i) >> sseMoveLeft i
+        | i < 0     = moveCursorRight i
+        | otherwise = pure ()
+    moveCursorRight i
+        | i > 0     = command (T.MoveCursorRight i) >> sseMoveRight i
+        | i < 0     = moveCursorLeft i
+        | otherwise = pure ()
 
-    useAlternateScreenBuffer               = command . T.UseAlternateScreenBuffer
+    setCursorPosition pos = do
+        command (T.SetCursorPosition pos)
+        sseSetCursorPosition pos
+    setCursorPositionVertical row = do
+        command (T.SetCursorPositionVertical row)
+        sseSetCursorPositionVertical row
+    setCursorPositionHorizontal col = do
+        command (T.SetCursorPositionHorizontal col)
+        sseSetCursorPositionVertical col
 
-    getScreenSize = TerminalT do
-        t <- lift ask
-        liftIO (T.termGetScreenSize t)
+    clearLine                = command T.ClearLine
+    clearLineLeft            = command T.ClearLineLeft
+    clearLineRight           = command T.ClearLineRight
+    clearScreen              = command T.ClearScreen
+    clearScreenAbove         = command T.ClearScreenAbove
+    clearScreenBelow         = command T.ClearScreenBelow
 
-    getCursorPosition = TerminalT do
-        t <- lift ask
-        liftIO (T.termGetCursorPosition t)
+    useAlternateScreenBuffer x = do
+        command (T.UseAlternateScreenBuffer x)
+        sseSetUnreliable
+
+    getScreenSize = sseGetScreenSize
+    getCursorPosition = \case
+        Report     -> report
+        Estimation -> maybe report pure =<< sseGetCursorPosition
+        where
+            report = do
+                pos <- TerminalT (liftIO . T.termGetCursorPosition =<< lift ask)
+                sseSetCursorPosition pos
+                pure pos
 
 instance (MonadIO m, MonadThrow m, T.Terminal t) => MonadTerminal (TerminalT t m) where
 
 -- | See https://en.wikipedia.org/wiki/List_of_Unicode_characters
 safeChar :: Char -> Bool
 safeChar c
-  | c == '\n'   = True  -- Newline
-  | c == '\t'   = True  -- Horizontal tab
   | c  < '\SP'  = False -- All other C0 control characters.
   | c  < '\DEL' = True  -- Printable remainder of ASCII. Start of C1.
   | c  < '\xa0' = False -- C1 up to start of Latin-1.
   | otherwise   = True
+
+sanitizeChar :: Char -> Char
+sanitizeChar c = if safeChar c then c else '�'
+
+sanitizeText :: Text.Text -> Text.Text
+sanitizeText t
+    | Text.any (not . safeChar) t = Text.map sanitizeChar t
+    | otherwise                   = t
 
 command :: (MonadIO m, MonadThrow m, T.Terminal t) => T.Command -> TerminalT t m ()
 command c = TerminalT do
@@ -176,23 +218,67 @@ command c = TerminalT do
   liftIO $ T.termCommand t c
 
 ---------------------------------------------------------------------------------------------------
--- SCREEN STATE ESTIMATION
+-- SCREEN STATE
 ---------------------------------------------------------------------------------------------------
 
-data ScreenStateEstimation
-  = ScreenStateEstimation
-  { sseWidth     :: {-# UNPACK #-} !Rows
-  , sseHeight    :: {-# UNPACK #-} !Cols
-  , sseCursorRow :: {-# UNPACK #-} !Row
-  , sseCursorCol :: {-# UNPACK #-} !Col
-  , sseReliable  :: {-# UNPACK #-} !Bool
+data ScreenState
+  = ScreenState
+  { sseScreenRows     :: {-# UNPACK #-} !Rows
+  , sseScreenCols     :: {-# UNPACK #-} !Cols
+  , sseCursorRow      :: {-# UNPACK #-} !Row
+  , sseCursorCol      :: {-# UNPACK #-} !Col
+  , sseCursorRowSaved :: {-# UNPACK #-} !Row
+  , sseCursorColSaved :: {-# UNPACK #-} !Col
+  , sseReliable       :: {-# UNPACK #-} !Bool
   }
 
-sseDefault :: ScreenStateEstimation
-sseDefault = ScreenStateEstimation 0 0 0 0 False
+sseDefault :: ScreenState
+sseDefault = ScreenState 0 0 0 0 0 0 False
 
-sseSetUnreliable :: (Monad m) => m ()
-sseSetUnreliable = pure ()
+sseSetUnreliable :: (Monad m, T.Terminal t) => TerminalT t m ()
+sseSetUnreliable = TerminalT do
+    sse <- get
+    put $! sse { sseReliable = False }
 
-sseSetCursorPosition :: (Monad m) => (Row, Col) -> m ()
-sseSetCursorPosition pos = pure ()
+sseGetScreenSize :: (MonadIO m, T.Terminal t) => TerminalT t m (Rows,Cols)
+sseGetScreenSize = do
+    (rows,cols) <- TerminalT (liftIO . T.termGetScreenSize =<< lift ask)
+    TerminalT do
+        sse <- get
+        when (sseScreenRows sse /= rows || sseScreenCols sse /= cols) do
+            put $! sse { sseReliable = False, sseScreenRows = rows, sseScreenCols = cols }
+    pure (rows,cols)
+
+sseGetCursorPosition :: (Monad m, T.Terminal t) => TerminalT t m (Maybe (Row,Col))
+sseGetCursorPosition = TerminalT do
+    sse <- get
+    pure if sseReliable sse
+        then Just (sseCursorRow sse, sseCursorCol sse)
+        else Nothing
+
+sseSetCursorPosition :: (Monad m, T.Terminal t) => (Row, Col) -> TerminalT t m ()
+sseSetCursorPosition (row, col) = TerminalT do
+    sse <- get
+    put $! sse { sseCursorRow = row, sseCursorCol = col }
+
+sseSetCursorPositionVertical i = pure ()
+
+ssetSetCursorPositionHorizontal = undefined
+
+sseSaveCursorPosition = undefined
+
+sseRestoreCursorPosition = undefined
+
+sseLn :: (Monad m, T.Terminal t) => TerminalT t m ()
+sseLn = pure ()
+
+ssePut :: (Monad m, T.Terminal t) => Cols -> TerminalT t m ()
+ssePut i = pure ()
+
+sseMoveUp = undefined
+
+sseMoveDown i = pure ()
+
+sseMoveRight = undefined
+
+sseMoveLeft = undefined

@@ -5,7 +5,22 @@ import           Control.Monad.Catch
 import           System.Terminal.MonadInput
 import           System.Terminal.MonadPrinter
 
+data CursorPositionSource
+  = Report
+  | Estimation
+  deriving (Eq, Ord, Show)
+
 class MonadScreen m where
+  -- | Show the cursor.
+  showCursor                  :: m ()
+  -- | Hide the cursor.
+  hideCursor                  :: m ()
+
+  -- | Save cursor position and attributes.
+  saveCursor                  :: m ()
+  -- | Restore cursor position and attributes.
+  restoreCursor               :: m ()
+
   -- | Move the cursor `n` lines up. Do not change column.
   moveCursorUp                :: Rows -> m ()
   -- | Move the cursor `n` lines down. Do not change column.
@@ -15,21 +30,13 @@ class MonadScreen m where
   -- | Move the cursor `n` columns to the right. Do not change line.
   moveCursorRight             :: Cols -> m ()
   -- | Get the current cursor position. `(0,0) is the upper left of the screen.
-  getCursorPosition           :: m (Row, Col)
+  getCursorPosition           :: CursorPositionSource -> m (Row, Col)
   -- | Set the cursor position. `(0,0)` is the upper left of the screen.
   setCursorPosition           :: (Row, Col) -> m ()
   -- | Set the vertical cursor position to the `n`th line. Do not change column.
   setCursorPositionVertical   :: Row -> m ()
   -- | Set the horizontal cursor position to the `n`th column. Do not change line.
   setCursorPositionHorizontal :: Col -> m ()
-  -- | Save the current cursor position to be restored later by `restoreCursorPosition`.
-  saveCursorPosition          :: m ()
-  -- | Restore cursor to position previously saved by `saveCursorPosition`.
-  restoreCursorPosition       :: m ()
-  -- | Show the cursor.
-  showCursor                  :: m ()
-  -- | Hide the cursor.
-  hideCursor                  :: m ()
 
   -- | Clear the entire line containing the cursor.
   clearLine                   :: m ()
