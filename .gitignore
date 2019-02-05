@@ -1,7 +1,70 @@
+
+##################################################
+# « sboosali »
+
+.sboo/
+ignore/
+temporary/
+
+##################################################
+# ghcid
+
+*.ghcid
+.ghcid.d/
+
+##################################################
+# Haskell
+
+.ghc.environment.*
+cabal.project.local
+*.o
+*.hi
+*.chi
+*.chs.h
+report.html
+.cabal-sandbox/
+cabal.sandbox.config
+cabal.config
+dist-newstyle/
+dist/
 .stack-work/
-*~
-.vscode/
+.styx/
 *.hp
 *.prof
 *.svg
-*.cabal
+
+##################################################
+# nix
+
+result-*/
+result/
+
+##################################################
+# Emacs
+
+*~
+\#*
+.\#*
+\#*\#
+,*
+.*.swp
+.*.swo
+TAGS
+.projectile
+
+##################################################
+# VSCode
+
+.vscode/
+
+##################################################
+# OS X
+
+.DS_Store
+
+##################################################
+# (miscellaneous)
+
+*.save
+
+##################################################
