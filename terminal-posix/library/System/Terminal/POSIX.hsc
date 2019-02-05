@@ -1,41 +1,70 @@
 {-# LANGUAGE LambdaCase, RankNTypes #-}
-module System.Terminal.Platform
+
+--------------------------------------------------
+
+module System.Terminal.POSIX
+
   ( withTerminal
   , LocalTerminal ()
   ) where
 
-import           Control.Applicative
-import           Control.Concurrent
-import qualified Control.Concurrent.Async      as A
-import           Control.Concurrent.STM.TChan
-import           Control.Concurrent.STM.TVar
-import           Control.Concurrent.STM.TMVar
-import qualified Control.Exception             as E
-import           Control.Monad                 (forM_, void, when)
-import           Control.Monad.Catch hiding    (handle)
-import           Control.Monad.IO.Class
-import           Control.Monad.STM
-import           Data.Bits
-import qualified Data.ByteString               as BS
-import qualified Data.ByteString.Char8         as BS8
-import           Data.Maybe
-import qualified Data.Text.IO                  as Text
-import           Foreign.C.Types
-import           Foreign.Marshal.Alloc
-import           Foreign.Ptr
-import           Foreign.Storable
-import           System.Environment
-import qualified System.IO                     as IO
-import qualified GHC.Conc                      as Conc
-import qualified Data.Dynamic                  as Dyn
+--------------------------------------------------
+--------------------------------------------------
+
+import           "base" Control.Applicative
+import           "base" Control.Concurrent
+import           "base" Control.Monad                 (forM_, void, when)
+import           "base" Control.Monad.IO.Class
+import           "base" Data.Bits
+import           "base" Data.Maybe
+import           "base" Foreign.C.Types
+import           "base" Foreign.Marshal.Alloc
+import           "base" Foreign.Ptr
+import           "base" Foreign.Storable
+import           "base" System.Environment
+import qualified "base" Control.Exception             as E
+import qualified "base" Data.Dynamic                  as Dyn
+import qualified "base" GHC.Conc                      as Conc
+import qualified "base" System.IO                     as IO
+
+--------------------------------------------------
+
+import           "stm" Control.Concurrent.STM.TChan
+import           "stm" Control.Concurrent.STM.TMVar
+import           "stm" Control.Concurrent.STM.TVar
+import           "stm" Control.Monad.STM
+
+--------------------------------------------------
+
+import qualified "text" Data.Text.IO                  as Text
+
+--------------------------------------------------
+
+import qualified "bytestring" Data.ByteString        as BS
+import qualified "bytestring" Data.ByteString.Char8  as BS8
+
+--------------------------------------------------
+
+import           "exceptions" Control.Monad.Catch hiding (handle)
+
+--------------------------------------------------
+
+import qualified "async" Control.Concurrent.Async      as A
+
+--------------------------------------------------
 
 import           System.Terminal.Terminal
 import           System.Terminal.MonadInput
 import           System.Terminal.Decoder
 import           System.Terminal.Encoder
 
+--------------------------------------------------
+
 #include "Rts.h"
 #include "hs_terminal.h"
+
+--------------------------------------------------
+--------------------------------------------------
 
 data LocalTerminal
     = LocalTerminal
@@ -55,14 +84,19 @@ instance Terminal LocalTerminal where
     termGetWindowSize     = localGetWindowSize
     termGetCursorPosition = localGetCursorPosition
 
+--------------------------------------------------
+--------------------------------------------------
+
 withTerminal :: (MonadIO m, MonadMask m) => (LocalTerminal -> m a) -> m a
 withTerminal action = do
+
     term           <- BS8.pack . fromMaybe "xterm" <$> liftIO (lookupEnv "TERM")
     mainThread     <- liftIO myThreadId
     interrupt      <- liftIO (newTVarIO False)
     events         <- liftIO newTChanIO
     windowSize     <- liftIO (newTVarIO =<< getWindowSize)
     cursorPosition <- liftIO newEmptyTMVarIO
+
     withTermiosSettings $ \termios->
         withResizeHandler (handleResize windowSize events) $
         withInputProcessing mainThread termios cursorPosition interrupt events $ 
@@ -80,12 +114,15 @@ withTerminal action = do
                 -- Wait for the result variable to be filled by the input processor.
                 atomically (takeTMVar cursorPosition)
             }
+
     where
         handleResize windowSize events = do
             ws <- getWindowSize
             atomically do
                 writeTVar windowSize ws
                 writeTChan events (WindowEvent $ WindowSizeChanged ws)
+
+--------------------------------------------------
 
 specialChar :: Termios -> Modifiers -> Char -> Maybe Event
 specialChar t mods = \case
@@ -222,11 +259,27 @@ setTermios t =
           _ -> undefined
       _ -> undefined
 
+--------------------------------------------------
+--------------------------------------------------
+
 data Winsize
   = Winsize
   { wsRow :: !CUShort
   , wsCol :: !CUShort
   } deriving (Eq, Ord, Show)
+
+instance Storable Winsize where
+  sizeOf    _ = (#size struct winsize)
+  alignment _ = (#alignment struct winsize)
+  peek ptr    = Winsize
+    <$> (#peek struct winsize, ws_row) ptr
+    <*> (#peek struct winsize, ws_col) ptr
+  poke ptr ws = do
+    (#poke struct winsize, ws_row) ptr (wsRow ws)
+    (#poke struct winsize, ws_col) ptr (wsCol ws)
+
+--------------------------------------------------
+--------------------------------------------------
 
 data Termios
   = Termios
@@ -239,16 +292,6 @@ data Termios
   , termiosICANON :: !Bool
   , termiosECHO   :: !Bool
   } deriving (Eq, Ord, Show)
-
-instance Storable Winsize where
-  sizeOf    _ = (#size struct winsize)
-  alignment _ = (#alignment struct winsize)
-  peek ptr    = Winsize
-    <$> (#peek struct winsize, ws_row) ptr
-    <*> (#peek struct winsize, ws_col) ptr
-  poke ptr ws = do
-    (#poke struct winsize, ws_row) ptr (wsRow ws)
-    (#poke struct winsize, ws_col) ptr (wsCol ws)
 
 instance Storable Termios where
   sizeOf    _ = (#size struct termios)
@@ -289,6 +332,9 @@ instance Storable Termios where
       pokeLFlag      = (#poke struct termios, c_lflag)      ptr :: CUInt -> IO ()
       peekLFlag      = (#peek struct termios, c_lflag)      ptr :: IO CUInt
 
+--------------------------------------------------
+--------------------------------------------------
+
 foreign import ccall unsafe "tcgetattr"
   unsafeGetTermios :: CInt -> Ptr Termios -> IO CInt
 
@@ -300,3 +346,6 @@ foreign import ccall unsafe "ioctl"
 
 foreign import ccall unsafe
   stg_sig_install :: CInt -> CInt -> Ptr a -> IO CInt
+
+--------------------------------------------------
+--------------------------------------------------

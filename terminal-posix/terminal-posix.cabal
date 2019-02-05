@@ -1,0 +1,589 @@
+cabal-version:       2.4
+
+                     -- ^ « v2.2 » introduced:
+                     --
+                     --   * « common » stanzas;
+                     --   * the « elif » keyword;
+                     --
+                     -- ^ « v2.4 » introduced:
+                     --
+                     --   * double-star wildcards (e.g. « data/**/*.txt »);
+                     --
+
+build-type:          Simple
+
+--------------------------------------------------
+
+name:                terminal-posix
+version:             0.0.0
+                     -- ^ ❲ A.B.C.D ❳:
+                     --
+                     -- • ❲ A.B ❳ — the MajorVersion
+                     -- • ❲ C ❳   — the MinorVersion
+                     -- • ❲ D ❳   — a PatchVersion
+
+-- x-revision:          1
+
+--------------------------------------------------
+-- Description -----------------------------------
+--------------------------------------------------
+
+synopsis:       Portable terminal-interaction — POSIX implementation (Linux & MacOS)
+category:       Terminal
+
+--------------------------------------------------
+
+description: Portable (Linux & OSX) terminal-interaction.
+             .
+             See the README on Github at <https://github.com/sboosali/terminal#readme>
+             .
+             Forked from @lpeterse@'s @terminal@ package.
+
+--------------------------------------------------
+
+author:              Lars Petersen
+maintainer:          Sam Boosalis <SamBoosalis@gmail>
+
+--------------------------------------------------
+-- Portability -----------------------------------
+--------------------------------------------------
+
+stability: provisional
+
+--------------------------------------------------
+
+tested-with: GHC   == 8.6.3
+           , GHC   == 8.4.4
+           , GHC   == 8.2.2
+
+--------------------------------------------------
+-- Licensing -------------------------------------
+--------------------------------------------------
+
+license:             BSD-3-Clause
+license-file:        LICENSE.txt
+copyright:           2019 Lars Petersen
+
+--------------------------------------------------
+-- (Non-Code) Files ------------------------------
+--------------------------------------------------
+
+extra-source-files: README.md
+                    LICENSE.txt
+                    CHANGELOG.md
+
+                    cbits/hs_terminal.c
+                    include/hs_terminal.h
+                    src/System/Terminal/Platform.hsc
+
+--------------------------------------------------
+
+--TODO add images
+-- extra-doc-files: docs/
+
+--------------------------------------------------
+-- Repository ------------------------------------
+--------------------------------------------------
+
+homepage:    https://github.com/sboosali/terminal#readme
+bug-reports: https://github.com/sboosali/terminal/issues
+
+--------------------------------------------------
+
+source-repository head
+  type:     git
+  location: git://github.com/sboosali/terminal.git
+  subdir:   terminal-posix
+
+--------------------------------------------------
+
+-- source-repository this
+--   type:     git
+--   location: git://github.com/sboosali/terminal.git
+--   subdir:   terminal-posix
+
+--------------------------------------------------
+-- Flags -----------------------------------------
+--------------------------------------------------
+
+flag develop
+
+  default:     False
+
+  description: Dynamic checking and exposed internals (for development).
+
+  manual:      True
+
+--------------------------------------------------
+
+-- flag ...
+--   default:     False
+--   description: Enable ...
+--   manual:      True
+
+--------------------------------------------------
+-- Common Stanzas --------------------------------
+--------------------------------------------------
+
+common Haskell2020Library
+
+ -----------------------------
+ --TODO cross-platform template...
+
+ -- if   os(linux)
+ -- --   linux-only:
+ -- --   ...
+ -- elif os(windows)
+ -- --   windows-only:
+ -- --   ...
+ -- elif os(darwin)
+ -- --   mac-only:
+ -- --   ...
+
+ -- -- ^ See « System.Info.os ».
+ -- -- ^ NOTE « os(windows) » canonicalizes « os(mingw32) », « os(cygwin32) », etc.
+
+ -----------------------------
+ --TODO cross-platform template...
+
+ -- if   arch(x86_64)
+ -- --   64-bit-only:
+ -- --   ...
+ -- elif arch(i386)
+ -- --   32-bit-only:
+ -- --   ...
+
+ -- -- ^ See « System.Info.arch ».
+
+ -----------------------------
+
+ default-language: Haskell2010
+
+ -----------------------------
+
+ build-depends: base >=4.7 && <5
+--build-depends: base-noprelude >=4.10 && <5
+
+ -----------------------------
+
+ include-dirs:     include
+
+ -----------------------------
+
+ ghc-options:
+
+  --------------------
+  -- warning groups
+  --------------------
+
+             -Wall
+
+  --------------------
+  -- disabled warnings
+  --------------------
+
+  --------------------
+  -- enabled warnings
+  --------------------
+
+             -fwarn-name-shadowing
+             -fwarn-tabs
+
+  --------------------
+  -- (miscellaneous warnings)
+  --------------------
+
+  -- raise a warning into an error
+  -- -Werror=missing-fields
+
+ -----------------------------
+
+ if impl(ghc >= 7.10)
+    ghc-options:
+
+        --------------------
+        -- disabled warnings
+        --------------------
+
+                -fno-warn-unticked-promoted-constructors
+                -- ^ NOTE « -fno-warn-... » is the old style,
+                --        « -Wno-... » is the new style.
+
+ -----------------------------
+
+ if impl(ghc >= 8.0)
+    ghc-options:
+
+        --------------------
+        -- warning groups
+        --------------------
+
+                -Wcompat
+
+        --------------------
+        -- disabled warnings
+        --------------------
+
+                -Wno-unticked-promoted-constructors
+         --TODO -fno-warn-redundant-constraints
+
+        --------------------
+        -- enabled warnings
+        --------------------
+
+                -Wnoncanonical-monad-instances
+                -Wnoncanonical-monadfail-instances
+
+                -Wincomplete-record-updates
+                -Wincomplete-uni-patterns
+
+                -Wmissing-methods
+                -Widentities
+
+                -- -Wmissing-exported-signatures
+                -- -Whi-shadowing
+
+        --------------------
+
+                -Wtyped-holes
+
+ -----------------------------
+
+ if flag(develop)
+ 
+    cpp-options: -DDEVELOP
+                 -- ^ Define the « DEVELOP » symbol for CPP.
+
+ -----------------------------
+
+ if flag(develop) && impl(ghc >= 8.0)
+ 
+    ghc-options: -fdefer-typed-holes
+                 -- ^ Use `typed-holes`, not `undefined`, during development.
+
+ -----------------------------
+
+ if impl(ghc >= 8.2)
+    ghc-options:
+
+        --------------------
+        -- enabled warnings
+        --------------------
+
+                -Wcpp-undef
+
+                -Wmissing-home-modules
+
+                -Wunbanged-strict-patterns
+
+ -----------------------------
+
+ default-extensions:
+
+   --------------------
+   -- "controversial"
+   --------------------
+                    NoImplicitPrelude
+
+   --------------------
+   -- `deriving`
+   --------------------
+                    AutoDeriveTypeable
+                    DeriveDataTypeable
+                    DeriveGeneric
+                    DeriveFunctor
+                    DeriveFoldable
+                    DeriveTraversable
+                    StandaloneDeriving
+--TODO
+
+   --------------------
+   -- syntax
+   --------------------
+                    PackageImports
+                    LambdaCase
+                    EmptyCase
+                    TypeOperators
+                    PostfixOperators
+                    BangPatterns
+                    KindSignatures
+                    NamedFieldPuns
+                    RecordWildCards
+                    TupleSections
+                    MultiWayIf
+                    DoAndIfThenElse
+                    EmptyDataDecls
+                    InstanceSigs
+
+   --------------------
+   -- typeclasses
+   --------------------
+                    MultiParamTypeClasses
+                    FlexibleContexts
+                    FlexibleInstances
+                    TypeFamilies
+                    FunctionalDependencies
+                    ConstrainedClassMethods
+
+   --------------------
+   -- patterns
+   --------------------
+                    ViewPatterns
+                    PatternSynonyms
+
+   --------------------
+   -- (miscellaneous)
+   --------------------
+                    ScopedTypeVariables
+
+ -----------------------------
+
+ other-extensions:
+
+   --------------------
+   -- macros
+   --------------------
+                  CPP
+   --               TemplateHaskell
+   --               QuasiQuotes
+
+   --------------------
+   -- syntax (of literals)
+   --------------------
+                  OverloadedStrings
+                  OverloadedLists
+
+   --------------------
+   -- (miscellaneous)
+   --------------------
+
+   -- RebindableSyntax
+   -- kinds:
+   -- DataKinds ConstraintKinds
+   -- harmful to inference:
+   -- GADTs RankNTypes
+   -- (miscellaneous)
+
+ -----------------------------
+
+ if impl(ghc >= 7.2)
+
+    default-extensions: DeriveLift
+
+ -----------------------------
+
+ if impl(ghc >= 7.10)
+
+    other-extensions: DeriveAnyClass
+
+ -----------------------------
+
+ if impl(ghc >= 8.0)
+
+    default-extensions: DuplicateRecordFields
+
+    other-extensions:   TemplateHaskellQuotes
+
+ -----------------------------
+
+ if impl(ghc >= 8.4)
+
+    default-extensions: DerivingStrategies
+                      , DeriveAnyClass
+                      , GeneralizedNewtypeDeriving
+
+ -----------------------------
+
+ if impl(ghc >= 8.6)
+
+    default-extensions: StarIsType
+                      , BlockArguments
+
+    -- ^ Enabling « StarIsType » is necessary for forwards-compatibility.
+    --
+    --   Using « :: * -> * » versus « :: Type -> Type » is necessary
+    --   for backwards-compatibility.
+    --
+    --   "Before GHC 8.0: the only way to refer to the kind of lifted types was the * syntax."
+    --
+    --   See « https://github.com/ghc-proposals/ghc-proposals/blob/master/proposals/0030-remove-star-kind.rst ».
+
+ -----------------------------
+
+ other-extensions:
+
+   --------------------
+   -- macros
+   --------------------
+                  TemplateHaskell
+   -- QuasiQuotes
+
+   --------------------
+   -- syntax (of literals)
+   --------------------
+                  OverloadedStrings
+                  OverloadedLists
+
+   --------------------
+   -- (miscellaneous)
+   --------------------
+
+   -- RebindableSyntax
+   -- kinds:
+   -- DataKinds ConstraintKinds
+   -- harmful to inference:
+   -- GADTs RankNTypes
+   -- (miscellaneous)
+
+--------------------------------------------------
+
+common Haskell2020Program
+
+ import: Haskell2020Library
+
+ -----------------------------
+
+ ghc-options:
+
+   --------------------
+   -- Compilation -----
+   --------------------
+
+             -O2
+
+   --------------------
+   -- Runtime ---------
+   --------------------
+
+             -threaded
+             -rtsopts -with-rtsopts=-N             
+
+   --------------------
+   -- Warnings --------
+   --------------------
+
+             -Wno-missing-signatures
+             -fno-warn-type-defaults
+
+
+--------------------------------------------------
+
+common Haskell2020Benchmark
+
+ import: Haskell2020Program
+
+ -----------------------------
+
+ ghc-options:
+
+   --------------------
+   -- Compilation -----
+   --------------------
+
+             -O2
+
+   --------------------
+   -- Runtime ---------
+   --------------------
+
+             -fdicts-cheap
+             -funbox-strict-fields
+
+   --------------------
+
+--------------------------------------------------
+-- Library ---------------------------------------
+--------------------------------------------------
+
+library
+
+------------------------------
+
+ import: Haskell2020Library
+
+------------------------------
+
+ hs-source-dirs: library
+
+ -----------------------------
+
+ include-dirs:   include
+
+ -----------------------------
+
+ c-sources:      cbits/hs_terminal.c
+
+ -----------------------------
+
+ -- i.e. « if !os(posix) »
+ if !(os(linux) || os(darwin) || os(aix) || os(hpux) || os(irix) || os(solaris) || os(freebsd) || os(opennbsd) || os(netbsd) || os(ios) || os(android) || os(hurd) || os(halvm))
+    buildable: False
+
+ -----------------------------
+
+ exposed-modules: System.Terminal.POSIX
+
+ -----------------------------
+
+ other-modules:   System.Terminal.POSIX.Types
+                  System.Terminal.POSIX.Foreign
+
+ -----------------------------
+
+ -- if flag(develop)
+ --    exposed-modules: Paths_terminal
+ --
+ -- else
+ --    other-modules:   Paths_terminal
+ --    autogen-modules: Paths_terminal
+
+ -----------------------------
+
+ -- signatures:
+
+ -----------------------------
+
+ build-depends:
+
+  --------------------
+  -- My Libraries ----
+  --------------------
+
+               spiros
+   ---          , enumerate
+
+  --------------------
+  -- Standard-Library
+  --------------------
+
+             , text             
+             , bytestring
+             , transformers
+           --, mtl
+             , containers
+
+  --------------------
+  -- "Extended" StdLib
+  --------------------
+
+             , deepseq
+             , hashable
+             , unordered-containers
+             , exceptions >=0.10.0
+
+  --------------------
+  -- Concurrency -----
+  --------------------
+
+              , stm
+              , async
+
+  --------------------
+  -- Miscellaneous ---
+  --------------------
+
+              , prettyprinter
+
+ -----------------------------
+
+--------------------------------------------------
