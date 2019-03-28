@@ -1,5 +1,8 @@
+{-# LANGUAGE CPP                      #-}
+{-# LANGUAGE ForeignFunctionInterface #-}
 {-# LANGUAGE LambdaCase, RankNTypes #-}
 
+--------------------------------------------------
 --------------------------------------------------
 
 module System.Terminal.POSIX
@@ -7,6 +10,18 @@ module System.Terminal.POSIX
   ( withTerminal
   , LocalTerminal ()
   ) where
+
+--------------------------------------------------
+--------------------------------------------------
+
+#include "Rts.h"
+#include "hs_terminal.h"
+
+--------------------------------------------------
+--------------------------------------------------
+
+import System.Terminal.POSIX.Types
+import System.Terminal.POSIX.Foreign
 
 --------------------------------------------------
 --------------------------------------------------
@@ -34,6 +49,9 @@ import           "stm" Control.Concurrent.STM.TMVar
 import           "stm" Control.Concurrent.STM.TVar
 import           "stm" Control.Monad.STM
 
+import           "stm" Control.Concurrent.STM.TChan (TChan)
+import qualified "stm" Control.Concurrent.STM.TChan as TChan
+
 --------------------------------------------------
 
 import qualified "text" Data.Text.IO                  as Text
@@ -57,11 +75,6 @@ import           System.Terminal.Terminal
 import           System.Terminal.MonadInput
 import           System.Terminal.Decoder
 import           System.Terminal.Encoder
-
---------------------------------------------------
-
-#include "Rts.h"
-#include "hs_terminal.h"
 
 --------------------------------------------------
 --------------------------------------------------
@@ -331,21 +344,6 @@ instance Storable Termios where
       pokeVQUIT      = (#poke struct termios, c_cc[VQUIT])  ptr :: CUChar -> IO ()
       pokeLFlag      = (#poke struct termios, c_lflag)      ptr :: CUInt -> IO ()
       peekLFlag      = (#peek struct termios, c_lflag)      ptr :: IO CUInt
-
---------------------------------------------------
---------------------------------------------------
-
-foreign import ccall unsafe "tcgetattr"
-  unsafeGetTermios :: CInt -> Ptr Termios -> IO CInt
-
-foreign import ccall unsafe "tcsetattr"
-  unsafeSetTermios :: CInt -> CInt -> Ptr Termios -> IO CInt
-
-foreign import ccall unsafe "ioctl"
-  unsafeIOCtl :: CInt -> CInt -> Ptr a -> IO CInt
-
-foreign import ccall unsafe
-  stg_sig_install :: CInt -> CInt -> Ptr a -> IO CInt
 
 --------------------------------------------------
 --------------------------------------------------
